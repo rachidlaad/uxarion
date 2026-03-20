@@ -15,6 +15,7 @@ pub enum SlashCommand {
     Model,
     #[strum(serialize = "apikey")]
     ApiKey,
+    Provider,
     Fast,
     Approvals,
     Permissions,
@@ -93,6 +94,7 @@ impl SlashCommand {
             SlashCommand::MemoryUpdate => "DO NOT USE",
             SlashCommand::Model => "choose what model and reasoning effort to use",
             SlashCommand::ApiKey => "set or replace the saved API key",
+            SlashCommand::Provider => "choose the default provider for future sessions",
             SlashCommand::Fast => "toggle Fast mode to enable fastest inference at 2X plan usage",
             SlashCommand::Personality => "choose a communication style for Uxarion",
             SlashCommand::Realtime => "toggle realtime voice mode (experimental)",
@@ -129,6 +131,7 @@ impl SlashCommand {
                 | SlashCommand::Rename
                 | SlashCommand::Plan
                 | SlashCommand::ApiKey
+                | SlashCommand::Provider
                 | SlashCommand::Fast
                 | SlashCommand::SandboxReadRoot
         )
@@ -145,6 +148,7 @@ impl SlashCommand {
             // | SlashCommand::Undo
             | SlashCommand::Model
             | SlashCommand::ApiKey
+            | SlashCommand::Provider
             | SlashCommand::Fast
             | SlashCommand::Personality
             | SlashCommand::Approvals

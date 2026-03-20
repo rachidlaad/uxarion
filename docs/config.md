@@ -12,6 +12,17 @@ Uxarion can connect to MCP servers configured in `~/.uxarion/config.toml`. See t
 
 - https://developers.openai.com/codex/config-reference
 
+## Model providers
+
+Uxarion defaults to an API-backed provider. Users can switch future sessions to `ollama` or `lmstudio` from inside the terminal UI with `/provider`.
+
+The equivalent config keys are:
+
+- `model_provider`
+- `oss_provider`
+
+If you change providers from the UI, Uxarion saves the new default and applies it on the next session start.
+
 ## Apps (Connectors)
 
 Use `$` in the composer to insert a ChatGPT connector; the popover lists accessible

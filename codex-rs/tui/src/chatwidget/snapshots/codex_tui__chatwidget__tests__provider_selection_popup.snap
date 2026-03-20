@@ -1,0 +1,16 @@
+---
+source: tui/src/chatwidget/tests.rs
+assertion_line: 6327
+expression: popup
+---
+  Select Provider
+  Choose the default backend for future sessions. Restart after changing providers
+
+› 1. API (default) (current)  Use your saved API key with the configured
+                              Responses-compatible backend.
+  2. Ollama (local)           Use a local Ollama server. Saved model defaults to
+                              gpt-oss:20b.
+  3. LM Studio (local)        Use a local LM Studio server. Saved model defaults
+                              to openai/gpt-oss-20b.
+
+  Press enter to confirm or esc to go back

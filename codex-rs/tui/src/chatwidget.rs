@@ -274,6 +274,7 @@ use self::agent::spawn_agent_from_existing;
 pub(crate) use self::agent::spawn_op_forwarder;
 mod session_header;
 use self::session_header::SessionHeader;
+mod provider_selection;
 mod skills;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;
@@ -4016,6 +4017,9 @@ impl ChatWidget {
             SlashCommand::ApiKey => {
                 self.show_api_key_prompt();
             }
+            SlashCommand::Provider => {
+                self.open_provider_popup();
+            }
             SlashCommand::Fast => {
                 let next_tier = if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
                     None
@@ -4340,6 +4344,16 @@ impl ChatWidget {
                     codex_core::auth::read_openai_api_key_from_env().is_some(),
                 );
                 self.bottom_pane.drain_pending_submission_state();
+            }
+            SlashCommand::Provider if !trimmed.is_empty() => {
+                let Some((prepared_args, _prepared_elements)) =
+                    self.bottom_pane.prepare_inline_args_submission(false)
+                else {
+                    return;
+                };
+                if self.handle_provider_inline_args(prepared_args.trim()) {
+                    self.bottom_pane.drain_pending_submission_state();
+                }
             }
             SlashCommand::Rename if !trimmed.is_empty() => {
                 self.session_telemetry

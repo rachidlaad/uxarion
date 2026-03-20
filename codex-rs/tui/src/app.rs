@@ -42,6 +42,8 @@ use codex_ansi_escape::ansi_escape_line;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_core::AuthManager;
 use codex_core::CodexAuth;
+use codex_core::LMSTUDIO_OSS_PROVIDER_ID;
+use codex_core::OLLAMA_OSS_PROVIDER_ID;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
@@ -252,6 +254,54 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
         history_cell::new_warning_event(message),
     )));
+}
+
+fn provider_selection_edits(
+    profile: Option<&str>,
+    provider_id: &str,
+    model: &str,
+) -> Vec<ConfigEdit> {
+    let model_provider_segments = if let Some(profile) = profile {
+        vec![
+            "profiles".to_string(),
+            profile.to_string(),
+            "model_provider".to_string(),
+        ]
+    } else {
+        vec!["model_provider".to_string()]
+    };
+    let oss_provider_segments = if let Some(profile) = profile {
+        vec![
+            "profiles".to_string(),
+            profile.to_string(),
+            "oss_provider".to_string(),
+        ]
+    } else {
+        vec!["oss_provider".to_string()]
+    };
+
+    let mut edits = vec![
+        ConfigEdit::SetModel {
+            model: Some(model.to_string()),
+            effort: None,
+        },
+        ConfigEdit::SetPath {
+            segments: model_provider_segments,
+            value: provider_id.to_string().into(),
+        },
+    ];
+
+    match provider_id {
+        OLLAMA_OSS_PROVIDER_ID | LMSTUDIO_OSS_PROVIDER_ID => edits.push(ConfigEdit::SetPath {
+            segments: oss_provider_segments,
+            value: provider_id.to_string().into(),
+        }),
+        _ => edits.push(ConfigEdit::ClearPath {
+            segments: oss_provider_segments,
+        }),
+    }
+
+    edits
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2840,6 +2890,49 @@ impl App {
                         } else {
                             self.chat_widget
                                 .add_error_message(format!("Failed to save default model: {err}"));
+                        }
+                    }
+                }
+            }
+            AppEvent::PersistProviderSelection {
+                provider_id,
+                model,
+                label,
+            } => {
+                let profile = self.active_profile.as_deref();
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_profile(profile)
+                    .with_edits(provider_selection_edits(profile, &provider_id, &model))
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        let mut message = format!("Provider changed to {label}");
+                        if let Some(profile) = profile {
+                            message.push_str(" for ");
+                            message.push_str(profile);
+                            message.push_str(" profile");
+                        }
+                        self.chat_widget.add_info_message(
+                            message,
+                            Some(
+                                "Restart Uxarion to use the saved provider in a new session."
+                                    .to_string(),
+                            ),
+                        );
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            error = %err,
+                            "failed to persist provider selection"
+                        );
+                        if let Some(profile) = profile {
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to save provider for profile `{profile}`: {err}"
+                            ));
+                        } else {
+                            self.chat_widget
+                                .add_error_message(format!("Failed to save provider: {err}"));
                         }
                     }
                 }
@@ -6072,6 +6165,51 @@ mod tests {
             app_enabled_in_effective_config(&app.config, &app_id),
             Some(false)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn provider_selection_edits_persist_api_defaults_without_oss_provider() -> Result<()> {
+        let codex_home = tempdir()?;
+
+        ConfigEditsBuilder::new(codex_home.path())
+            .with_edits(provider_selection_edits(None, "pentest-local", "gpt-5.4"))
+            .apply()
+            .await
+            .expect("persist api provider selection");
+
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(config.contains("model_provider = \"pentest-local\""));
+        assert!(config.contains("model = \"gpt-5.4\""));
+        assert!(!config.contains("oss_provider"));
+        assert!(!config.contains("model_reasoning_effort"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn provider_selection_edits_persist_oss_provider_under_profile() -> Result<()> {
+        let codex_home = tempdir()?;
+        let ollama_model =
+            codex_utils_oss::get_default_model_for_oss_provider(OLLAMA_OSS_PROVIDER_ID)
+                .expect("ollama default model");
+
+        ConfigEditsBuilder::new(codex_home.path())
+            .with_profile(Some("security"))
+            .with_edits(provider_selection_edits(
+                Some("security"),
+                OLLAMA_OSS_PROVIDER_ID,
+                ollama_model,
+            ))
+            .apply()
+            .await
+            .expect("persist ollama provider selection");
+
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(config.contains("[profiles.security]"));
+        assert!(config.contains("model_provider = \"ollama\""));
+        assert!(config.contains("oss_provider = \"ollama\""));
+        assert!(config.contains(&format!("model = \"{ollama_model}\"")));
+        assert!(!config.contains("model_reasoning_effort"));
         Ok(())
     }
 

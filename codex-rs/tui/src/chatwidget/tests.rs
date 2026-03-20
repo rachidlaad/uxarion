@@ -18,6 +18,7 @@ use crate::test_backend::VT100Backend;
 use crate::tui::FrameRequester;
 use assert_matches::assert_matches;
 use codex_core::CodexAuth;
+use codex_core::OLLAMA_OSS_PROVIDER_ID;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::Constrained;
@@ -6313,6 +6314,61 @@ async fn api_key_prompt_popup_snapshot() {
 
     let popup = render_bottom_popup(&chat, 80);
     assert_snapshot!("api_key_prompt_popup", popup);
+}
+
+#[tokio::test]
+async fn provider_selection_popup_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.dispatch_command(SlashCommand::Provider);
+
+    let popup = render_bottom_popup(&chat, 84);
+    assert_snapshot!("provider_selection_popup", popup);
+}
+
+#[tokio::test]
+async fn provider_command_inline_arg_dispatches_ollama_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let ollama_model = codex_utils_oss::get_default_model_for_oss_provider(OLLAMA_OSS_PROVIDER_ID)
+        .expect("ollama default model");
+
+    assert!(chat.handle_provider_inline_args("ollama"));
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::PersistProviderSelection {
+            provider_id,
+            model,
+            label,
+        }) if provider_id == OLLAMA_OSS_PROVIDER_ID
+            && model == ollama_model
+            && label == "Ollama (local)"
+    );
+}
+
+#[tokio::test]
+async fn provider_command_status_reports_current_session_provider() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let ollama_model = codex_utils_oss::get_default_model_for_oss_provider(OLLAMA_OSS_PROVIDER_ID)
+        .expect("ollama default model");
+    chat.config.model_provider_id = OLLAMA_OSS_PROVIDER_ID.to_string();
+    chat.set_model(ollama_model);
+
+    assert!(chat.handle_provider_inline_args("status"));
+
+    let event = rx.try_recv().expect("expected history update");
+    match event {
+        AppEvent::InsertHistoryCell(cell) => {
+            let rendered = lines_to_single_string(&cell.display_lines(120));
+            assert!(
+                rendered.contains("Current session provider: Ollama (local)."),
+                "expected provider status message, got {rendered:?}"
+            );
+            assert!(rendered.contains(ollama_model));
+        }
+        other => panic!("expected history update, got {other:?}"),
+    }
 }
 
 #[tokio::test]

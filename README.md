@@ -51,6 +51,10 @@ uxarion
 
 Run `uxarion`, then use `/apikey` inside the terminal UI to save a key for future runs. You can also export `OPENAI_API_KEY` if you prefer environment-based setup.
 
+### Optional: switch to a local model
+
+Uxarion keeps the API-backed provider as the default. If you want to switch future sessions to a local model backend, run `uxarion` and use `/provider`, or type `/provider ollama` or `/provider lmstudio` inside the terminal UI. Provider changes are saved for the next session.
+
 ## Updates
 
 Uxarion checks [GitHub Releases](https://github.com/rachidlaad/uxarion-security/releases) on startup. The version check comes from the `uxarion-security` repo, and the command shown in the UI depends on how Uxarion was installed:
