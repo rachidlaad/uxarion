@@ -8,7 +8,7 @@ For a full configuration reference, see [this documentation](https://developers.
 
 ## Connecting to MCP servers
 
-Codex can connect to MCP servers configured in `~/.codex/config.toml`. See the configuration reference for the latest MCP server options:
+Uxarion can connect to MCP servers configured in `~/.uxarion/config.toml`. See the configuration reference for the latest MCP server options:
 
 - https://developers.openai.com/codex/config-reference
 

@@ -1,6 +1,7 @@
 {
   "name": "uxarion",
-  "version": "0.1.2",
+  "version": "0.1.3",
+  "uxarionRuntimeVersion": "0.1.2",
   "license": "Apache-2.0",
   "bin": {
     "uxarion": "bin/uxarion.js"

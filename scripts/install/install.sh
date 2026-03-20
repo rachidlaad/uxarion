@@ -166,25 +166,16 @@ if [ "$os" = "darwin" ] && [ "$arch" = "x86_64" ]; then
 fi
 
 if [ "$os" = "darwin" ]; then
-  if [ "$arch" = "aarch64" ]; then
-    npm_tag="darwin-arm64"
-    vendor_target="aarch64-apple-darwin"
-    platform_label="macOS (Apple Silicon)"
-  else
-    npm_tag="darwin-x64"
-    vendor_target="x86_64-apple-darwin"
-    platform_label="macOS (Intel)"
-  fi
+  echo "Direct install currently supports Linux (x64) only. Use npm install -g uxarion on other platforms." >&2
+  exit 1
 else
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="linux-arm64"
-    vendor_target="aarch64-unknown-linux-musl"
-    platform_label="Linux (ARM64)"
-  else
-    npm_tag="linux-x64"
-    vendor_target="x86_64-unknown-linux-musl"
-    platform_label="Linux (x64)"
+    echo "Direct install currently supports Linux (x64) only. Use npm install -g uxarion on other platforms." >&2
+    exit 1
   fi
+
+  vendor_target="x86_64-unknown-linux-musl"
+  platform_label="Linux (x64)"
 fi
 
 if [ -x "$INSTALL_DIR/uxarion" ]; then
@@ -197,7 +188,7 @@ step "$install_mode Uxarion"
 step "Detected platform: $platform_label"
 
 resolved_version="$(resolve_version)"
-asset="uxarion-npm-$npm_tag-$resolved_version.tgz"
+asset="uxarion-$resolved_version-linux-x64.tar.xz"
 download_url="$(release_url_for_asset "$asset" "$resolved_version")"
 
 step "Resolved version: $resolved_version"
@@ -213,7 +204,7 @@ archive_path="$tmp_dir/$asset"
 step "Downloading Uxarion"
 download_file "$download_url" "$archive_path"
 
-tar -xzf "$archive_path" -C "$tmp_dir"
+tar -xJf "$archive_path" -C "$tmp_dir"
 
 step "Installing to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"

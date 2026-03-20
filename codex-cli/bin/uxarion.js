@@ -21,6 +21,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 const packageMetadata = require("../package.json");
+const runtimeVersion =
+  process.env.UXARION_RUNTIME_VERSION ||
+  packageMetadata.uxarionRuntimeVersion ||
+  packageMetadata.version;
 
 const PLATFORM_PACKAGE_BY_TARGET = {
   "x86_64-unknown-linux-musl": "uxarion-linux-x64",
@@ -33,14 +37,20 @@ const PLATFORM_PACKAGE_BY_TARGET = {
 
 const RUNTIME_ARTIFACT_BY_TARGET = {
   "x86_64-unknown-linux-musl": {
-    archiveName: `uxarion-${packageMetadata.version}-linux-x64.tar.xz`,
+    archiveName: `uxarion-${runtimeVersion}-linux-x64.tar.xz`,
     platformName: "linux-x64",
   },
 };
 
-const UXARION_DOWNLOAD_BASE_URL =
-  process.env.UXARION_DOWNLOAD_BASE_URL ||
-  "https://raw.githubusercontent.com/rachidlaad/uxarion-downloads/main/releases";
+const UXARION_DOWNLOAD_BASE_URLS = [
+  process.env.UXARION_DOWNLOAD_BASE_URL,
+  ...(process.env.UXARION_DOWNLOAD_BASE_URLS || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean),
+  "https://github.com/rachidlaad/uxarion-downloads/raw/main/releases",
+  "https://raw.githubusercontent.com/rachidlaad/uxarion-downloads/main/releases",
+].filter(Boolean);
 
 const { platform, arch } = process;
 
@@ -129,6 +139,14 @@ function getUxarionCacheRoot() {
   return path.join(homedir(), ".cache", "uxarion");
 }
 
+function getUxarionHome() {
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+  if (xdgConfigHome) {
+    return path.join(xdgConfigHome, "uxarion");
+  }
+  return path.join(homedir(), ".uxarion");
+}
+
 /**
  * Use heuristics to detect the package manager that was used to install Uxarion
  * in order to give the user a hint about how to update it.
@@ -163,6 +181,85 @@ function getReinstallMessage() {
   return `Missing optional dependency ${platformPackage}. Reinstall Uxarion: ${updateCommand}`;
 }
 
+function getRuntimeDownloadUrls(runtimeArtifact) {
+  return [...new Set(
+    UXARION_DOWNLOAD_BASE_URLS.map(
+      (baseUrl) => `${baseUrl}/v${runtimeVersion}/${runtimeArtifact.archiveName}`,
+    ),
+  )];
+}
+
+function downloadWithCurl(url, partialArchivePath) {
+  const result = spawnSync(
+    "curl",
+    [
+      "-fL",
+      "--connect-timeout",
+      "30",
+      "--retry",
+      "3",
+      "--retry-all-errors",
+      "--silent",
+      "--show-error",
+      "-o",
+      partialArchivePath,
+      url,
+    ],
+    { encoding: "utf8" },
+  );
+
+  if (!result.error && result.status === 0) {
+    return null;
+  }
+
+  if (result.error?.code === "ENOENT") {
+    return "curl not available";
+  }
+
+  return result.stderr?.trim() || `curl failed with status ${result.status ?? "unknown"}`;
+}
+
+function downloadWithWget(url, partialArchivePath) {
+  const result = spawnSync(
+    "wget",
+    [
+      "--quiet",
+      "--tries=3",
+      "--timeout=30",
+      "-O",
+      partialArchivePath,
+      url,
+    ],
+    { encoding: "utf8" },
+  );
+
+  if (!result.error && result.status === 0) {
+    return null;
+  }
+
+  if (result.error?.code === "ENOENT") {
+    return "wget not available";
+  }
+
+  return result.stderr?.trim() || `wget failed with status ${result.status ?? "unknown"}`;
+}
+
+async function downloadWithFetch(url, partialArchivePath) {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(
+      `Failed to download ${url} (${response.status} ${response.statusText})`,
+    );
+  }
+
+  await pipeline(
+    Readable.fromWeb(response.body),
+    createWriteStream(partialArchivePath),
+  );
+}
+
 async function downloadRuntimeVendorRoot() {
   const runtimeArtifact = RUNTIME_ARTIFACT_BY_TARGET[targetTriple];
   if (!runtimeArtifact) {
@@ -189,30 +286,47 @@ async function downloadRuntimeVendorRoot() {
   mkdirSync(runtimeRoot, { recursive: true });
   const archivePath = path.join(runtimeRoot, runtimeArtifact.archiveName);
   if (!existsSync(archivePath)) {
-    const archiveUrl = `${UXARION_DOWNLOAD_BASE_URL}/v${packageMetadata.version}/${runtimeArtifact.archiveName}`;
+    const archiveUrls = getRuntimeDownloadUrls(runtimeArtifact);
     // eslint-disable-next-line no-console
     console.error(
-      `Downloading Uxarion runtime ${packageMetadata.version} for ${runtimeArtifact.platformName}...`,
+      `Downloading Uxarion runtime ${runtimeVersion} for ${runtimeArtifact.platformName}...`,
     );
-    const response = await fetch(archiveUrl);
-    if (!response.ok || !response.body) {
-      throw new Error(
-        `Failed to download ${runtimeArtifact.archiveName} (${response.status} ${response.statusText})`,
-      );
-    }
-
     const partialArchivePath = `${archivePath}.partial`;
-    try {
-      await pipeline(
-        Readable.fromWeb(response.body),
-        createWriteStream(partialArchivePath),
-      );
-      renameSync(partialArchivePath, archivePath);
-    } catch (error) {
+    const errors = [];
+
+    for (const archiveUrl of archiveUrls) {
       if (existsSync(partialArchivePath)) {
         unlinkSync(partialArchivePath);
       }
-      throw error;
+
+      const curlError = downloadWithCurl(archiveUrl, partialArchivePath);
+      if (curlError === null) {
+        renameSync(partialArchivePath, archivePath);
+        break;
+      }
+
+      const wgetError = downloadWithWget(archiveUrl, partialArchivePath);
+      if (wgetError === null) {
+        renameSync(partialArchivePath, archivePath);
+        break;
+      }
+
+      try {
+        await downloadWithFetch(archiveUrl, partialArchivePath);
+        renameSync(partialArchivePath, archivePath);
+        break;
+      } catch (error) {
+        if (existsSync(partialArchivePath)) {
+          unlinkSync(partialArchivePath);
+        }
+        errors.push(`${archiveUrl}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    if (!existsSync(archivePath)) {
+      throw new Error(
+        `Failed to download ${runtimeArtifact.archiveName} from all configured sources:\n${errors.join("\n")}`,
+      );
     }
   }
 
@@ -257,6 +371,8 @@ if (existsSync(pathDir)) {
 const updatedPath = getUpdatedPath(additionalDirs);
 
 const env = { ...process.env, PATH: updatedPath };
+env.CODEX_HOME ||= getUxarionHome();
+mkdirSync(env.CODEX_HOME, { recursive: true });
 const packageManagerEnvVar =
   detectPackageManager() === "bun"
     ? "UXARION_MANAGED_BY_BUN"

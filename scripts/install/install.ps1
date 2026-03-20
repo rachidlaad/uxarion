@@ -84,6 +84,9 @@ if ($env:OS -ne "Windows_NT") {
     exit 1
 }
 
+Write-Error "Direct Windows installation is not published yet. Use npm install -g uxarion on a supported environment for now."
+exit 1
+
 if (-not [Environment]::Is64BitOperatingSystem) {
     Write-Error "Uxarion requires a 64-bit version of Windows."
     exit 1
