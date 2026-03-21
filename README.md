@@ -67,14 +67,6 @@ Uxarion checks [GitHub Releases](https://github.com/rachidlaad/uxarion/releases)
 - bun installs are prompted with `bun install -g uxarion@latest`
 - source checkout installs can keep using `uxarion update`
 
-## Documentation
+## Contributing
 
-- [Install and build guide](./docs/install.md)
-- [Configuration guide](./docs/config.md)
-- [Contribution guide](./CONTRIBUTING.md)
-- [Security policy](./SECURITY.md)
-- [License](./LICENSE)
-
-## License
-
-Uxarion is licensed under the [Apache-2.0 License](./LICENSE).
+Open issues, discussions, and pull requests in this repo are the main collaboration path for Uxarion.
