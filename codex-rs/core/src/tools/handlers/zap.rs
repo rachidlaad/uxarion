@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 pub struct ZapRunHandler;
+pub struct ZapStatusHandler;
 
 #[derive(Debug, Deserialize)]
 struct ZapRunArgs {
@@ -46,6 +47,12 @@ fn payload_arguments(payload: ToolPayload) -> Result<String, FunctionCallError> 
     }
 }
 
+fn zap_disabled_message() -> FunctionCallError {
+    FunctionCallError::RespondToModel(
+        "ZAP integration is disabled for this session. Enable it in `[security.zap]` or restart with updated settings before using ZAP-backed tools.".to_string(),
+    )
+}
+
 #[async_trait]
 impl ToolHandler for ZapRunHandler {
     type Output = FunctionToolOutput;
@@ -72,7 +79,12 @@ impl ToolHandler for ZapRunHandler {
             .ensure_url_in_scope(&args.target)
             .await?;
 
-        let client = ZapClient::from_env();
+        let zap_config = session.services.security_state.zap_config().clone();
+        if !zap_config.enabled {
+            return Err(zap_disabled_message());
+        }
+
+        let client = ZapClient::from_security_config(&zap_config);
         let scan_type = ZapScanType::parse(&args.scan_type)?;
         let result = client
             .run_scan(&ZapRunRequest {
@@ -135,6 +147,33 @@ impl ToolHandler for ZapRunHandler {
             "alerts_truncated": result.alerts_truncated,
             "alerts": result.alerts,
             "evidence": [summary_record.id, alerts_record.id],
+        });
+
+        Ok(FunctionToolOutput::from_text(
+            serde_json::to_string_pretty(&output).unwrap_or_else(|_| output.to_string()),
+            Some(true),
+        ))
+    }
+}
+
+#[async_trait]
+impl ToolHandler for ZapStatusHandler {
+    type Output = FunctionToolOutput;
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Function
+    }
+
+    async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
+        let ToolInvocation { session, .. } = invocation;
+        let status = session.services.security_state.zap_status().await;
+        let output = json!({
+            "enabled": status.enabled,
+            "base_url": status.base_url,
+            "api_key_configured": status.api_key_configured,
+            "reachable": status.reachable,
+            "version": status.version,
+            "error": status.error,
         });
 
         Ok(FunctionToolOutput::from_text(

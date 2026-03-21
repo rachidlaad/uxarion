@@ -1662,6 +1662,7 @@ impl Session {
                     &config.codex_home,
                     &conversation_id,
                     security::is_security_config(config.as_ref()),
+                    security::resolve_zap_config(Some(config.as_ref())),
                 )
                 .await,
             ),

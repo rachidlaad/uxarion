@@ -276,6 +276,7 @@ mod session_header;
 use self::session_header::SessionHeader;
 mod provider_selection;
 mod skills;
+mod zap_selection;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;
 use self::skills::find_skill_mentions_with_tool_mentions;
@@ -4020,6 +4021,9 @@ impl ChatWidget {
             SlashCommand::Provider => {
                 self.open_provider_popup();
             }
+            SlashCommand::Zap => {
+                self.open_zap_popup();
+            }
             SlashCommand::Fast => {
                 let next_tier = if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
                     None
@@ -4352,6 +4356,16 @@ impl ChatWidget {
                     return;
                 };
                 if self.handle_provider_inline_args(prepared_args.trim()) {
+                    self.bottom_pane.drain_pending_submission_state();
+                }
+            }
+            SlashCommand::Zap if !trimmed.is_empty() => {
+                let Some((prepared_args, _prepared_elements)) =
+                    self.bottom_pane.prepare_inline_args_submission(false)
+                else {
+                    return;
+                };
+                if self.handle_zap_inline_args(prepared_args.trim()) {
                     self.bottom_pane.drain_pending_submission_state();
                 }
             }

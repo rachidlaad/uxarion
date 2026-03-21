@@ -2253,6 +2253,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
                 &config.codex_home,
                 &conversation_id,
                 crate::security::is_security_config(config.as_ref()),
+                crate::security::resolve_zap_config(Some(config.as_ref())),
             )
             .await,
         ),
@@ -2822,6 +2823,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
                 &config.codex_home,
                 &conversation_id,
                 crate::security::is_security_config(config.as_ref()),
+                crate::security::resolve_zap_config(Some(config.as_ref())),
             )
             .await,
         ),

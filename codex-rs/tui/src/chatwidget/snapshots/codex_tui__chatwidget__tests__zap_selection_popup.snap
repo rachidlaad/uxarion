@@ -1,0 +1,16 @@
+---
+source: tui/src/chatwidget/tests.rs
+assertion_line: 6338
+expression: popup
+---
+  Configure ZAP
+  Enabled: yes  Base URL: http://127.0.0.1:8080
+  Use /zap status, /zap url <http://host:port>, /zap key <value>, or /zap clear-key.
+
+› 1. Show ZAP status        Check whether the configured ZAP API is reachable right now.
+  2. Use localhost default  Save the default ZAP API URL for most machines:
+                            http://127.0.0.1:8080.
+  3. Disable ZAP            Turn off ZAP-backed tools for future sessions.
+  4. Clear API key          Remove the saved ZAP API key from config.
+
+  Press enter to confirm or esc to go back

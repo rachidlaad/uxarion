@@ -50,7 +50,9 @@ use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::edit::ConfigEdit;
 use codex_core::config::edit::ConfigEditsBuilder;
+use codex_core::config::types::DEFAULT_SECURITY_ZAP_BASE_URL;
 use codex_core::config::types::ModelAvailabilityNuxConfig;
+use codex_core::config::types::SecurityZapConfig;
 use codex_core::config_loader::ConfigLayerStackOrdering;
 use codex_core::features::Feature;
 use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -299,6 +301,48 @@ fn provider_selection_edits(
         _ => edits.push(ConfigEdit::ClearPath {
             segments: oss_provider_segments,
         }),
+    }
+
+    edits
+}
+
+fn zap_selection_edits(config: &SecurityZapConfig) -> Vec<ConfigEdit> {
+    let mut edits = vec![
+        ConfigEdit::SetPath {
+            segments: vec![
+                "security".to_string(),
+                "zap".to_string(),
+                "enabled".to_string(),
+            ],
+            value: config.enabled.into(),
+        },
+        ConfigEdit::SetPath {
+            segments: vec![
+                "security".to_string(),
+                "zap".to_string(),
+                "base_url".to_string(),
+            ],
+            value: config.base_url.clone().into(),
+        },
+    ];
+
+    if let Some(api_key) = &config.api_key {
+        edits.push(ConfigEdit::SetPath {
+            segments: vec![
+                "security".to_string(),
+                "zap".to_string(),
+                "api_key".to_string(),
+            ],
+            value: api_key.clone().into(),
+        });
+    } else {
+        edits.push(ConfigEdit::ClearPath {
+            segments: vec![
+                "security".to_string(),
+                "zap".to_string(),
+                "api_key".to_string(),
+            ],
+        });
     }
 
     edits
@@ -2935,6 +2979,49 @@ impl App {
                                 .add_error_message(format!("Failed to save provider: {err}"));
                         }
                     }
+                }
+            }
+            AppEvent::PersistZapSelection { config, label } => {
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits(zap_selection_edits(&config))
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.security_zap = config.clone();
+                        self.chat_widget.set_security_zap(config.clone());
+
+                        let default_hint = if config.base_url == DEFAULT_SECURITY_ZAP_BASE_URL {
+                            "Using the default localhost ZAP API.".to_string()
+                        } else {
+                            format!("Saved ZAP base URL: {}", config.base_url)
+                        };
+                        self.chat_widget.add_info_message(
+                            label,
+                            Some(format!(
+                                "{default_hint} Restart Uxarion before running new ZAP-backed scans."
+                            )),
+                        );
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist ZAP selection");
+                        self.chat_widget
+                            .add_error_message(format!("Failed to save ZAP settings: {err}"));
+                    }
+                }
+            }
+            AppEvent::ZapStatusReport {
+                message,
+                hint,
+                is_error,
+            } => {
+                if is_error {
+                    self.chat_widget.add_error_message(message);
+                    if let Some(hint) = hint {
+                        self.chat_widget.add_info_message(hint, None);
+                    }
+                } else {
+                    self.chat_widget.add_info_message(message, hint);
                 }
             }
             AppEvent::PersistPersonalitySelection { personality } => {
@@ -6210,6 +6297,29 @@ mod tests {
         assert!(config.contains("oss_provider = \"ollama\""));
         assert!(config.contains(&format!("model = \"{ollama_model}\"")));
         assert!(!config.contains("model_reasoning_effort"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn zap_selection_edits_persist_security_zap_config() -> Result<()> {
+        let codex_home = tempdir()?;
+        let config = SecurityZapConfig {
+            enabled: true,
+            base_url: "http://127.0.0.1:8080".to_string(),
+            api_key: Some("zap-test-key".to_string()),
+        };
+
+        ConfigEditsBuilder::new(codex_home.path())
+            .with_edits(zap_selection_edits(&config))
+            .apply()
+            .await
+            .expect("persist zap config");
+
+        let file = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(file.contains("[security.zap]"));
+        assert!(file.contains("enabled = true"));
+        assert!(file.contains("base_url = \"http://127.0.0.1:8080\""));
+        assert!(file.contains("api_key = \"zap-test-key\""));
         Ok(())
     }
 

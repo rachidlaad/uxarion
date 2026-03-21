@@ -16,6 +16,7 @@ pub enum SlashCommand {
     #[strum(serialize = "apikey")]
     ApiKey,
     Provider,
+    Zap,
     Fast,
     Approvals,
     Permissions,
@@ -95,6 +96,7 @@ impl SlashCommand {
             SlashCommand::Model => "choose what model and reasoning effort to use",
             SlashCommand::ApiKey => "set or replace the saved API key",
             SlashCommand::Provider => "choose the default provider for future sessions",
+            SlashCommand::Zap => "configure the ZAP API used for web scanning",
             SlashCommand::Fast => "toggle Fast mode to enable fastest inference at 2X plan usage",
             SlashCommand::Personality => "choose a communication style for Uxarion",
             SlashCommand::Realtime => "toggle realtime voice mode (experimental)",
@@ -132,6 +134,7 @@ impl SlashCommand {
                 | SlashCommand::Plan
                 | SlashCommand::ApiKey
                 | SlashCommand::Provider
+                | SlashCommand::Zap
                 | SlashCommand::Fast
                 | SlashCommand::SandboxReadRoot
         )
@@ -149,6 +152,7 @@ impl SlashCommand {
             | SlashCommand::Model
             | SlashCommand::ApiKey
             | SlashCommand::Provider
+            | SlashCommand::Zap
             | SlashCommand::Fast
             | SlashCommand::Personality
             | SlashCommand::Approvals

@@ -22,6 +22,7 @@ use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::history_cell::HistoryCell;
 
+use codex_core::config::types::SecurityZapConfig;
 use codex_core::features::Feature;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::config_types::Personality;
@@ -198,6 +199,19 @@ pub(crate) enum AppEvent {
         provider_id: String,
         model: String,
         label: String,
+    },
+
+    /// Persist the selected ZAP settings for future sessions.
+    PersistZapSelection {
+        config: SecurityZapConfig,
+        label: String,
+    },
+
+    /// Report the result of probing the configured ZAP API.
+    ZapStatusReport {
+        message: String,
+        hint: Option<String>,
+        is_error: bool,
     },
 
     /// Persist the selected personality to the appropriate config.

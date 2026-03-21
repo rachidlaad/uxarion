@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::config::types::SecurityZapConfig;
 use crate::contextual_user_message::is_contextual_user_fragment;
 use crate::default_client::build_reqwest_client;
 use crate::function_tool::FunctionCallError;
@@ -20,7 +21,12 @@ use tokio::fs;
 use tokio::sync::Mutex;
 use url::Url;
 
+mod inventory;
 mod zap;
+
+pub(crate) use inventory::SecurityToolInventory;
+pub(crate) use zap::ZapApiStatus;
+pub(crate) use zap::resolve_zap_config;
 
 pub(crate) const SECURITY_PROFILE_NAME: &str = "security";
 pub(crate) const SECURITY_CONTEXT_OPEN_TAG: &str = "<security_context>";
@@ -159,37 +165,6 @@ pub(crate) struct SecuritySessionState {
     pub commands: Vec<ExecutedCommandRecord>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct SecurityToolInventory {
-    pub available: Vec<String>,
-    pub missing: Vec<String>,
-    pub zap_api_base_url: String,
-    pub zap_api_key_configured: bool,
-}
-
-impl SecurityToolInventory {
-    fn discover() -> Self {
-        let zap_api_key = zap::resolve_zap_api_key();
-        let mut available = Vec::new();
-        let mut missing = Vec::new();
-        for binary in SECURITY_BINARY_ALLOWLIST {
-            if which::which(binary).is_ok() {
-                available.push((*binary).to_string());
-            } else {
-                missing.push((*binary).to_string());
-            }
-        }
-        available.sort();
-        missing.sort();
-        Self {
-            available,
-            missing,
-            zap_api_base_url: zap::resolve_zap_base_url(),
-            zap_api_key_configured: zap_api_key.is_some(),
-        }
-    }
-}
-
 pub(crate) fn is_security_config(config: &Config) -> bool {
     config.active_profile.as_deref() == Some(SECURITY_PROFILE_NAME)
         || config.model_provider_id == PENTEST_LOCAL_PROVIDER_ID
@@ -229,18 +204,28 @@ pub(crate) struct SecuritySessionStateService {
     state_path: PathBuf,
     findings_path: PathBuf,
     report_path: PathBuf,
+    zap_config: SecurityZapConfig,
     inventory: SecurityToolInventory,
     state: Mutex<SecuritySessionState>,
 }
 
 impl SecuritySessionStateService {
-    pub(crate) async fn new(codex_home: &Path, thread_id: &ThreadId, enabled: bool) -> Self {
+    pub(crate) async fn new(
+        codex_home: &Path,
+        thread_id: &ThreadId,
+        enabled: bool,
+        zap_config: SecurityZapConfig,
+    ) -> Self {
         let root_dir = codex_home.join("security").join(thread_id.to_string());
         let evidence_dir = root_dir.join("evidence");
         let state_path = root_dir.join("state.json");
         let findings_path = root_dir.join("findings.json");
         let report_path = root_dir.join("report.md");
-        let inventory = SecurityToolInventory::discover();
+        let inventory = if enabled {
+            SecurityToolInventory::discover(&zap_config).await
+        } else {
+            SecurityToolInventory::disabled(&zap_config)
+        };
 
         let initial_state = if enabled {
             if let Err(err) = fs::create_dir_all(&evidence_dir).await {
@@ -260,6 +245,7 @@ impl SecuritySessionStateService {
             state_path,
             findings_path,
             report_path,
+            zap_config,
             inventory,
             state: Mutex::new(initial_state),
         }
@@ -292,6 +278,14 @@ impl SecuritySessionStateService {
         }
 
         serde_json::to_string_pretty(&self.inventory).ok()
+    }
+
+    pub(crate) fn zap_config(&self) -> &SecurityZapConfig {
+        &self.zap_config
+    }
+
+    pub(crate) async fn zap_status(&self) -> ZapApiStatus {
+        zap::probe_zap_api(&self.zap_config).await
     }
 
     pub(crate) async fn snapshot(&self) -> SecuritySessionState {
@@ -1194,8 +1188,13 @@ mod tests {
     #[tokio::test]
     async fn security_state_persists_findings_and_report() {
         let tmp = tempdir().expect("tempdir");
-        let service =
-            SecuritySessionStateService::new(tmp.path(), &ThreadId::default(), true).await;
+        let service = SecuritySessionStateService::new(
+            tmp.path(),
+            &ThreadId::default(),
+            true,
+            SecurityZapConfig::default(),
+        )
+        .await;
         service
             .validate_scope(&["https://example.com".to_string()], None, true)
             .await
@@ -1229,8 +1228,13 @@ mod tests {
     #[tokio::test]
     async fn security_state_derives_scope_from_current_user_input() {
         let tmp = tempdir().expect("tempdir");
-        let service =
-            SecuritySessionStateService::new(tmp.path(), &ThreadId::default(), true).await;
+        let service = SecuritySessionStateService::new(
+            tmp.path(),
+            &ThreadId::default(),
+            true,
+            SecurityZapConfig::default(),
+        )
+        .await;
 
         service
             .ensure_default_scope_from_user_input(&[UserInput::Text {
@@ -1250,8 +1254,13 @@ mod tests {
     #[tokio::test]
     async fn security_state_persists_recent_commands() {
         let tmp = tempdir().expect("tempdir");
-        let service =
-            SecuritySessionStateService::new(tmp.path(), &ThreadId::default(), true).await;
+        let service = SecuritySessionStateService::new(
+            tmp.path(),
+            &ThreadId::default(),
+            true,
+            SecurityZapConfig::default(),
+        )
+        .await;
 
         service
             .record_command(ExecutedCommandRecord {

@@ -15,6 +15,32 @@ Uxarion keeps an interactive terminal agent loop, but focuses it on web and appl
 
 Uxarion is local-first. You bring the target scope, tooling, and API key; Uxarion helps you drive the workflow from one terminal UI.
 
+## ZAP setup
+
+Uxarion talks to ZAP through the API, not by scripting the desktop UI.
+
+Default setup:
+
+1. Start ZAP with the API enabled on `http://127.0.0.1:8080`
+2. Launch `uxarion`
+3. Run `/zap status` to verify connectivity
+4. If your ZAP API is on a different host or port, run `/zap url http://host:port`
+5. Restart Uxarion before relying on `zap_run` in a new session
+
+Useful commands:
+
+- `/zap` opens the ZAP setup popup
+- `/zap status` checks the current saved ZAP API endpoint
+- `/zap url http://127.0.0.1:8080` saves a different API base URL
+- `/zap key <value>` saves a ZAP API key
+- `/zap clear-key` removes the saved ZAP API key
+- `/zap enable` or `/zap disable` toggles ZAP-backed tooling for future sessions
+
+Environment overrides:
+
+- `UXARION_ZAP_BASE_URL`
+- `UXARION_ZAP_API_KEY`
+
 ## Project home
 
 - Source, releases, issues, and discussions: [github.com/rachidlaad/uxarion](https://github.com/rachidlaad/uxarion)

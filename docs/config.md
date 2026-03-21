@@ -30,6 +30,33 @@ Typical local-provider flow:
 4. Restart Uxarion
 5. Run `/provider status` to verify the active backend
 
+## ZAP integration
+
+Uxarion stores ZAP settings under `[security.zap]`.
+
+Example:
+
+```toml
+[security.zap]
+enabled = true
+base_url = "http://127.0.0.1:8080"
+api_key = ""
+```
+
+Resolution order:
+
+1. `UXARION_ZAP_BASE_URL` / `UXARION_ZAP_API_KEY`
+2. `~/.uxarion/config.toml`
+3. built-in default `http://127.0.0.1:8080`
+
+Typical ZAP flow:
+
+1. Start ZAP with the API enabled
+2. Launch `uxarion`
+3. Run `/zap status`
+4. If needed, run `/zap url http://host:port`
+5. Restart Uxarion before running new ZAP-backed scans
+
 ## Apps (Connectors)
 
 Use `$` in the composer to insert a connector; the popover lists accessible

@@ -18,6 +18,8 @@ use crate::config::types::OtelConfigToml;
 use crate::config::types::OtelExporterKind;
 use crate::config::types::PluginConfig;
 use crate::config::types::SandboxWorkspaceWrite;
+use crate::config::types::SecurityConfigToml;
+use crate::config::types::SecurityZapConfig;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::config::types::ShellEnvironmentPolicyToml;
 use crate::config::types::SkillsConfig;
@@ -541,6 +543,9 @@ pub struct Config {
 
     /// OTEL configuration (exporter type, endpoint, headers, etc.).
     pub otel: crate::config::types::OtelConfig,
+
+    /// Resolved ZAP integration settings for security mode.
+    pub security_zap: SecurityZapConfig,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1195,6 +1200,10 @@ pub struct ConfigToml {
 
     /// Collection of settings that are specific to the TUI.
     pub tui: Option<Tui>,
+
+    /// Security-product-specific configuration.
+    #[serde(default)]
+    pub security: Option<SecurityConfigToml>,
 
     /// When set to `true`, `AgentReasoning` events will be hidden from the
     /// UI/output. Defaults to `false`.
@@ -2459,6 +2468,7 @@ impl Config {
                     microphone: audio.microphone,
                     speaker: audio.speaker,
                 }),
+            security_zap: cfg.security.unwrap_or_default().resolved_zap(),
             experimental_realtime_ws_base_url: cfg.experimental_realtime_ws_base_url,
             experimental_realtime_ws_model: cfg.experimental_realtime_ws_model,
             experimental_realtime_ws_backend_prompt: cfg.experimental_realtime_ws_backend_prompt,

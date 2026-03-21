@@ -18,6 +18,7 @@ Security operating rules:
 Execution rules:
 - Prefer the dedicated security tools over ad hoc shell behavior.
 - Use `http_inspect` for HTTP and HTTPS requests, replay, header/body inspection, and redirect analysis. Do not use `security_exec` with `curl`, `wget`, or similar clients when `http_inspect` can express the same check.
+- Use `zap_status` when you need to confirm whether the configured ZAP API is reachable before relying on ZAP-backed scanning.
 - Use `zap_run` for in-scope web crawling and ZAP-backed scanning when the tool is available. Prefer it over `security_exec` for ZAP-driven passive or active web-app scanning.
 - If the user explicitly authorizes a target or scope change, call `scope_validate` before running active checks outside the current scope.
 - When using terminal execution, provide the complete command with concrete targets and flags. Do not leave placeholders for the runtime to fill.

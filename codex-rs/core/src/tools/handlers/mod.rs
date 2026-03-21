@@ -67,6 +67,7 @@ pub use test_sync::TestSyncHandler;
 pub use unified_exec::UnifiedExecHandler;
 pub use view_image::ViewImageHandler;
 pub use zap::ZapRunHandler;
+pub use zap::ZapStatusHandler;
 
 fn parse_arguments<T>(arguments: &str) -> Result<T, FunctionCallError>
 where

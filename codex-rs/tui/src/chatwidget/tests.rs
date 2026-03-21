@@ -6328,6 +6328,17 @@ async fn provider_selection_popup_snapshot() {
 }
 
 #[tokio::test]
+async fn zap_selection_popup_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.dispatch_command(SlashCommand::Zap);
+
+    let popup = render_bottom_popup(&chat, 96);
+    assert_snapshot!("zap_selection_popup", popup);
+}
+
+#[tokio::test]
 async fn provider_command_inline_arg_dispatches_ollama_selection() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let ollama_model = codex_utils_oss::get_default_model_for_oss_provider(OLLAMA_OSS_PROVIDER_ID)
@@ -6344,6 +6355,34 @@ async fn provider_command_inline_arg_dispatches_ollama_selection() {
         }) if provider_id == OLLAMA_OSS_PROVIDER_ID
             && model == ollama_model
             && label == "Ollama (local)"
+    );
+}
+
+#[tokio::test]
+async fn zap_command_inline_arg_dispatches_url_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    assert!(chat.handle_zap_inline_args("url http://127.0.0.1:8080"));
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::PersistZapSelection { config, label })
+            if config.enabled
+                && config.base_url == "http://127.0.0.1:8080"
+                && label == "Saved ZAP base URL"
+    );
+}
+
+#[tokio::test]
+async fn zap_command_inline_arg_dispatches_disable_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    assert!(chat.handle_zap_inline_args("disable"));
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::PersistZapSelection { config, label })
+            if !config.enabled && label == "Disabled ZAP integration"
     );
 }
 

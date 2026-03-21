@@ -1394,6 +1394,39 @@
       },
       "type": "object"
     },
+    "SecurityConfigToml": {
+      "additionalProperties": false,
+      "properties": {
+        "zap": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SecurityZapConfigToml"
+            }
+          ],
+          "default": null,
+          "description": "ZAP integration settings used by security mode."
+        }
+      },
+      "type": "object"
+    },
+    "SecurityZapConfigToml": {
+      "additionalProperties": false,
+      "properties": {
+        "api_key": {
+          "description": "API key for ZAP when the API requires one.",
+          "type": "string"
+        },
+        "base_url": {
+          "description": "Base URL for the ZAP API service.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "When `false`, disables ZAP-backed tooling for new sessions.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "ServiceTier": {
       "enum": [
         "fast",
@@ -2284,6 +2317,15 @@
         }
       ],
       "description": "Sandbox configuration to apply if `sandbox` is `WorkspaceWrite`."
+    },
+    "security": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecurityConfigToml"
+        }
+      ],
+      "default": null,
+      "description": "Security-product-specific configuration."
     },
     "service_tier": {
       "allOf": [

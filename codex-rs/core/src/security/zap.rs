@@ -1,3 +1,6 @@
+use crate::config::Config;
+use crate::config::types::DEFAULT_SECURITY_ZAP_BASE_URL;
+use crate::config::types::SecurityZapConfig;
 use crate::default_client::build_reqwest_client;
 use crate::function_tool::FunctionCallError;
 use crate::security::parse_host;
@@ -12,7 +15,6 @@ use url::Url;
 
 pub(crate) const UXARION_ZAP_BASE_URL_ENV_VAR: &str = "UXARION_ZAP_BASE_URL";
 pub(crate) const UXARION_ZAP_API_KEY_ENV_VAR: &str = "UXARION_ZAP_API_KEY";
-pub(crate) const DEFAULT_ZAP_BASE_URL: &str = "http://172.17.160.1:8080";
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const ALERTS_PAGE_SIZE: usize = 250;
 
@@ -92,6 +94,16 @@ pub(crate) struct ZapRunResult {
     pub alerts_truncated: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ZapApiStatus {
+    pub enabled: bool,
+    pub base_url: String,
+    pub api_key_configured: bool,
+    pub reachable: bool,
+    pub version: Option<String>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ZapClient {
     config: ZapClientConfig,
@@ -99,8 +111,11 @@ pub(crate) struct ZapClient {
 }
 
 impl ZapClient {
-    pub(crate) fn from_env() -> Self {
-        Self::new(ZapClientConfig::default())
+    pub(crate) fn from_security_config(config: &SecurityZapConfig) -> Self {
+        Self::new(ZapClientConfig {
+            base_url: config.base_url.clone(),
+            api_key: config.api_key.clone(),
+        })
     }
 
     pub(crate) fn new(config: ZapClientConfig) -> Self {
@@ -158,6 +173,27 @@ impl ZapClient {
             alerts,
             alerts_truncated,
         })
+    }
+
+    pub(crate) async fn status(&self) -> ZapApiStatus {
+        match self.version().await {
+            Ok(version) => ZapApiStatus {
+                enabled: true,
+                base_url: self.config.base_url.clone(),
+                api_key_configured: self.config.api_key.is_some(),
+                reachable: true,
+                version: Some(version),
+                error: None,
+            },
+            Err(err) => ZapApiStatus {
+                enabled: true,
+                base_url: self.config.base_url.clone(),
+                api_key_configured: self.config.api_key.is_some(),
+                reachable: false,
+                version: None,
+                error: Some(err.to_string()),
+            },
+        }
     }
 
     async fn version(&self) -> Result<String, FunctionCallError> {
@@ -371,7 +407,7 @@ pub(crate) fn resolve_zap_base_url() -> String {
         .ok()
         .map(|value| value.trim().trim_end_matches('/').to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_ZAP_BASE_URL.to_string())
+        .unwrap_or_else(|| DEFAULT_SECURITY_ZAP_BASE_URL.to_string())
 }
 
 pub(crate) fn resolve_zap_api_key() -> Option<String> {
@@ -385,12 +421,59 @@ fn normalize_config(config: ZapClientConfig) -> ZapClientConfig {
     let base_url = config.base_url.trim().trim_end_matches('/').to_string();
     ZapClientConfig {
         base_url: if base_url.is_empty() {
-            DEFAULT_ZAP_BASE_URL.to_string()
+            DEFAULT_SECURITY_ZAP_BASE_URL.to_string()
         } else {
             base_url
         },
         api_key: config.api_key.filter(|value| !value.trim().is_empty()),
     }
+}
+
+pub(crate) fn resolve_zap_config(config: Option<&Config>) -> SecurityZapConfig {
+    resolve_zap_config_from_sources(
+        config.map(|cfg| cfg.security_zap.clone()),
+        std::env::var(UXARION_ZAP_BASE_URL_ENV_VAR).ok(),
+        std::env::var(UXARION_ZAP_API_KEY_ENV_VAR).ok(),
+    )
+}
+
+pub(crate) async fn probe_zap_api(config: &SecurityZapConfig) -> ZapApiStatus {
+    if !config.enabled {
+        return ZapApiStatus {
+            enabled: false,
+            base_url: config.base_url.clone(),
+            api_key_configured: config.api_key.is_some(),
+            reachable: false,
+            version: None,
+            error: Some("ZAP integration is disabled in config.".to_string()),
+        };
+    }
+
+    ZapClient::from_security_config(config).status().await
+}
+
+fn resolve_zap_config_from_sources(
+    config: Option<SecurityZapConfig>,
+    env_base_url: Option<String>,
+    env_api_key: Option<String>,
+) -> SecurityZapConfig {
+    let mut resolved = config.unwrap_or_default().normalized();
+
+    if let Some(base_url) = env_base_url
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+    {
+        resolved.base_url = base_url;
+    }
+
+    if let Some(api_key) = env_api_key
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        resolved.api_key = Some(api_key);
+    }
+
+    resolved.normalized()
 }
 
 fn json_string_field(
@@ -427,6 +510,7 @@ fn parse_alert_summary(value: &Value) -> Result<ZapAlertSummary, FunctionCallErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::types::SecurityZapConfig;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use wiremock::Mock;
@@ -560,6 +644,40 @@ mod tests {
                     plugin_id: Some("40012".to_string()),
                 }],
                 alerts_truncated: false,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_zap_config_from_sources_prefers_explicit_env_values() {
+        let resolved = resolve_zap_config_from_sources(
+            Some(SecurityZapConfig {
+                enabled: true,
+                base_url: "http://config-host:8080/".to_string(),
+                api_key: Some("config-key".to_string()),
+            }),
+            Some("http://env-host:9090/".to_string()),
+            Some(" env-key ".to_string()),
+        );
+
+        assert_eq!(
+            resolved,
+            SecurityZapConfig {
+                enabled: true,
+                base_url: "http://env-host:9090".to_string(),
+                api_key: Some("env-key".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_zap_config_from_sources_falls_back_to_localhost_default() {
+        assert_eq!(
+            resolve_zap_config_from_sources(None, None, None),
+            SecurityZapConfig {
+                enabled: true,
+                base_url: DEFAULT_SECURITY_ZAP_BASE_URL.to_string(),
+                api_key: None,
             }
         );
     }

@@ -368,6 +368,82 @@ pub struct FeedbackConfigToml {
     pub enabled: Option<bool>,
 }
 
+pub const DEFAULT_SECURITY_ZAP_BASE_URL: &str = "http://127.0.0.1:8080";
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct SecurityConfigToml {
+    /// ZAP integration settings used by security mode.
+    #[serde(default)]
+    pub zap: Option<SecurityZapConfigToml>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct SecurityZapConfigToml {
+    /// When `false`, disables ZAP-backed tooling for new sessions.
+    pub enabled: Option<bool>,
+    /// Base URL for the ZAP API service.
+    pub base_url: Option<String>,
+    /// API key for ZAP when the API requires one.
+    pub api_key: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SecurityZapConfig {
+    pub enabled: bool,
+    pub base_url: String,
+    pub api_key: Option<String>,
+}
+
+impl Default for SecurityZapConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            base_url: DEFAULT_SECURITY_ZAP_BASE_URL.to_string(),
+            api_key: None,
+        }
+    }
+}
+
+impl SecurityZapConfig {
+    pub fn normalized(self) -> Self {
+        let base_url = self.base_url.trim().trim_end_matches('/').to_string();
+        let api_key = self
+            .api_key
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        Self {
+            enabled: self.enabled,
+            base_url: if base_url.is_empty() {
+                DEFAULT_SECURITY_ZAP_BASE_URL.to_string()
+            } else {
+                base_url
+            },
+            api_key,
+        }
+    }
+}
+
+impl From<SecurityZapConfigToml> for SecurityZapConfig {
+    fn from(value: SecurityZapConfigToml) -> Self {
+        Self {
+            enabled: value.enabled.unwrap_or(true),
+            base_url: value
+                .base_url
+                .unwrap_or_else(|| DEFAULT_SECURITY_ZAP_BASE_URL.to_string()),
+            api_key: value.api_key,
+        }
+        .normalized()
+    }
+}
+
+impl SecurityConfigToml {
+    pub fn resolved_zap(self) -> SecurityZapConfig {
+        self.zap.map(Into::into).unwrap_or_default()
+    }
+}
+
 /// Memories settings loaded from config.toml.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
