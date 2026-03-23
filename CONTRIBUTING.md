@@ -23,6 +23,7 @@ Thanks for helping improve Uxarion.
 - Run formatting and the relevant tests before opening a pull request.
 - Add or update tests for behavior changes.
 - Update docs when config, install, update, or user-facing workflows change.
+- If the change affects current product state, release flow, or maintainer context, update the relevant file under `docs/project/`.
 
 ## Pull request checklist
 

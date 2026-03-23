@@ -1,3 +1,27 @@
+# Repo Context
+
+This repository uses `rachidlaad/uxarion` as the canonical public source of truth.
+
+Before making broad product or release changes, read:
+
+- `docs/project/current-state.md`
+- `docs/project/architecture.md`
+- `docs/project/release-process.md`
+- `docs/project/known-issues.md`
+- `docs/project/handoff.md`
+
+For product-history and decision context, also check:
+
+- `docs/project/roadmap-context.md`
+- `docs/project/decisions/`
+
+Context rules:
+
+- Keep public maintainer and contributor context in tracked files under `docs/project/`.
+- Do not put secrets, private tokens, unpublished credentials, or sensitive operator-only notes in tracked repo files.
+- If you need local-only notes for an AI worker or maintainer, use ignored local files such as `.codex/` instead of tracked markdown.
+- When changing install flow, update flow, release process, roadmap assumptions, or other cross-cutting behavior, update the relevant `docs/project/` file in the same change.
+
 # Rust/codex-rs
 
 In the codex-rs folder where the rust code lives:
