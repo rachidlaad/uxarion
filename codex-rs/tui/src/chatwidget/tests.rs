@@ -6172,6 +6172,21 @@ async fn slash_findings_renders_current_findings_summary() {
 }
 
 #[tokio::test]
+async fn slash_findings_requires_thread_id() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.dispatch_command(SlashCommand::Findings);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one error message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Findings are unavailable until this session has a thread id."),
+        "expected missing-thread guidance, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
 async fn slash_report_with_finding_id_submits_user_turn() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.thread_id = Some(ThreadId::new());

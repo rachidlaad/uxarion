@@ -4471,6 +4471,12 @@ impl ChatWidget {
     }
 
     fn show_security_findings(&mut self) {
+        if self.thread_id.is_none() {
+            self.add_error_message(
+                "Findings are unavailable until this session has a thread id.".to_string(),
+            );
+            return;
+        }
         match reporting::load_findings(&self.config.codex_home, self.thread_id) {
             Ok(findings) => {
                 let message = reporting::format_findings_summary(&findings);

@@ -13,10 +13,15 @@ pub(super) enum ReportScope<'a> {
 pub(super) struct PersistedFinding {
     #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub target: String,
+    #[serde(default)]
     pub vulnerability: String,
+    #[serde(default)]
     pub severity: String,
+    #[serde(default)]
     pub confidence: String,
+    #[serde(default)]
     pub status: String,
 }
 
