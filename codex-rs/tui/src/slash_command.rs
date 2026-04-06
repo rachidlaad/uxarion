@@ -59,6 +59,8 @@ pub enum SlashCommand {
     Settings,
     TestApproval,
     MultiAgents,
+    Findings,
+    Report,
     // Debugging commands.
     #[strum(serialize = "debug-m-drop")]
     MemoryDrop,
@@ -116,6 +118,8 @@ impl SlashCommand {
             SlashCommand::Logout => "log out of Uxarion",
             SlashCommand::Rollout => "print the rollout file path",
             SlashCommand::TestApproval => "test approval request",
+            SlashCommand::Findings => "show current security findings with IDs",
+            SlashCommand::Report => "generate Markdown security reports",
         }
     }
 
@@ -137,6 +141,7 @@ impl SlashCommand {
                 | SlashCommand::Zap
                 | SlashCommand::Fast
                 | SlashCommand::SandboxReadRoot
+                | SlashCommand::Report
         )
     }
 
@@ -179,7 +184,9 @@ impl SlashCommand {
             | SlashCommand::Apps
             | SlashCommand::Feedback
             | SlashCommand::Quit
-            | SlashCommand::Exit => true,
+            | SlashCommand::Exit
+            | SlashCommand::Findings
+            | SlashCommand::Report => true,
             SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,
             SlashCommand::Realtime => true,

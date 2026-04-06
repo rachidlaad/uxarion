@@ -6338,6 +6338,76 @@ async fn zap_selection_popup_snapshot() {
     assert_snapshot!("zap_selection_popup", popup);
 }
 
+#[test]
+fn report_inline_args_parser_handles_supported_forms() {
+    assert_eq!(
+        super::reporting::parse_report_target(""),
+        Ok(super::reporting::ReportTarget::SessionAll)
+    );
+    assert_eq!(
+        super::reporting::parse_report_target("all"),
+        Ok(super::reporting::ReportTarget::SessionAll)
+    );
+    assert_eq!(
+        super::reporting::parse_report_target("finding finding-0007"),
+        Ok(super::reporting::ReportTarget::SingleFinding(
+            "finding-0007".to_string()
+        ))
+    );
+}
+
+#[test]
+fn report_inline_args_parser_rejects_invalid_forms() {
+    assert_eq!(
+        super::reporting::parse_report_target("finding"),
+        Err("Usage: /report [all|finding <id>]".to_string())
+    );
+    assert_eq!(
+        super::reporting::parse_report_target("id finding-0001"),
+        Err("Usage: /report [all|finding <id>]".to_string())
+    );
+}
+
+#[tokio::test]
+async fn findings_command_submits_reporting_prompt() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.dispatch_command(SlashCommand::Findings);
+
+    let Op::UserTurn { items, .. } = next_submit_op(&mut op_rx) else {
+        panic!("expected Op::UserTurn");
+    };
+    assert_eq!(
+        items,
+        vec![UserInput::Text {
+            text: super::reporting::findings_prompt(),
+            text_elements: Vec::new(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn report_command_with_finding_id_submits_targeted_prompt() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.dispatch_command_with_args(
+        SlashCommand::Report,
+        "finding finding-0003".to_string(),
+        Vec::new(),
+    );
+
+    let Op::UserTurn { items, .. } = next_submit_op(&mut op_rx) else {
+        panic!("expected Op::UserTurn");
+    };
+    assert_eq!(
+        items,
+        vec![UserInput::Text {
+            text: super::reporting::report_prompt(&super::reporting::ReportTarget::SingleFinding(
+                "finding-0003".to_string()
+            )),
+            text_elements: Vec::new(),
+        }]
+    );
+}
+
 #[tokio::test]
 async fn provider_command_inline_arg_dispatches_ollama_selection() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;

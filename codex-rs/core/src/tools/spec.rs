@@ -1046,6 +1046,15 @@ fn create_report_write_tool() -> ToolSpec {
                         ),
                     },
                 ),
+                (
+                    "finding_id".to_string(),
+                    JsonSchema::String {
+                        description: Some(
+                            "Optional finding identifier to write a single-finding report artifact."
+                                .to_string(),
+                        ),
+                    },
+                ),
             ]),
             required: None,
             additional_properties: Some(false.into()),

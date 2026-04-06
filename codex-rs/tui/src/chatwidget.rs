@@ -274,6 +274,8 @@ use self::agent::spawn_agent_from_existing;
 pub(crate) use self::agent::spawn_op_forwarder;
 mod session_header;
 use self::session_header::SessionHeader;
+mod reporting;
+use self::reporting::ReportTarget;
 mod provider_selection;
 mod skills;
 mod zap_selection;
@@ -4208,6 +4210,14 @@ impl ChatWidget {
             SlashCommand::Skills => {
                 self.open_skills_menu();
             }
+            SlashCommand::Findings => {
+                self.submit_user_message(reporting::findings_prompt().into());
+            }
+            SlashCommand::Report => {
+                self.submit_user_message(
+                    reporting::report_prompt(&ReportTarget::SessionAll).into(),
+                );
+            }
             SlashCommand::Status => {
                 self.add_status_output();
             }
@@ -4445,6 +4455,20 @@ impl ChatWidget {
                         path: prepared_args,
                     });
                 self.bottom_pane.drain_pending_submission_state();
+            }
+            SlashCommand::Report => {
+                let Some((prepared_args, _prepared_elements)) =
+                    self.bottom_pane.prepare_inline_args_submission(false)
+                else {
+                    return;
+                };
+                match reporting::parse_report_target(&prepared_args) {
+                    Ok(target) => {
+                        self.submit_user_message(reporting::report_prompt(&target).into());
+                        self.bottom_pane.drain_pending_submission_state();
+                    }
+                    Err(usage) => self.add_error_message(usage),
+                }
             }
             _ => self.dispatch_command(cmd),
         }
