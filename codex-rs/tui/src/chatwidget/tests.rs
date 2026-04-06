@@ -6113,6 +6113,64 @@ async fn slash_rollout_handles_missing_path() {
 }
 
 #[tokio::test]
+async fn slash_findings_displays_persisted_findings() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let thread_id = ThreadId::default();
+    chat.thread_id = Some(thread_id);
+    let security_dir = chat
+        .config
+        .codex_home
+        .join("security")
+        .join(thread_id.to_string());
+    std::fs::create_dir_all(&security_dir).expect("create security dir");
+    std::fs::write(
+        security_dir.join("findings.json"),
+        r#"[{"id":"finding-0001","target":"https://example.com","vulnerability":"Reflected XSS","severity":"high","confidence":"confirmed","status":"confirmed","evidence":["evidence-1"]}]"#,
+    )
+    .expect("write findings");
+
+    chat.dispatch_command(SlashCommand::Findings);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected findings summary");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_snapshot!("slash_findings_displays_persisted_findings", rendered);
+}
+
+#[tokio::test]
+async fn slash_report_finding_writes_markdown_report() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let thread_id = ThreadId::default();
+    chat.thread_id = Some(thread_id);
+    let security_dir = chat
+        .config
+        .codex_home
+        .join("security")
+        .join(thread_id.to_string());
+    std::fs::create_dir_all(&security_dir).expect("create security dir");
+    std::fs::write(
+        security_dir.join("state.json"),
+        r#"{"scope":{"mode":"host_only","allowed_hosts":["example.com"]},"evidence_index":[{"name":"response","path":"/tmp/response.txt"}],"findings":[{"id":"finding-0001","target":"https://example.com","vulnerability":"Reflected XSS","severity":"high","confidence":"confirmed","status":"confirmed","evidence":["evidence-1"]}]}"#,
+    )
+    .expect("write state");
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Report,
+        "finding finding-0001".to_string(),
+        Vec::new(),
+    );
+
+    let report_path = security_dir.join("report-finding-finding-0001.md");
+    assert!(report_path.exists(), "expected finding report");
+    let report = std::fs::read_to_string(report_path).expect("read report");
+    assert!(report.contains("Reflected XSS"));
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected report success message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(rendered.contains("Report written to"));
+}
+
+#[tokio::test]
 async fn undo_success_events_render_info_messages() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 

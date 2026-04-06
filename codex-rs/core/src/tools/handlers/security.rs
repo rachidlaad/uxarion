@@ -91,6 +91,8 @@ struct CaptureEvidenceArgs {
 
 #[derive(Debug, Deserialize)]
 struct RecordFindingArgs {
+    #[serde(default)]
+    id: Option<String>,
     target: String,
     vulnerability: String,
     severity: String,
@@ -113,6 +115,8 @@ struct ReportWriteArgs {
     summary: Option<String>,
     #[serde(default)]
     include_evidence: bool,
+    #[serde(default)]
+    finding_id: Option<String>,
 }
 
 fn default_exec_yield_time_ms() -> u64 {
@@ -439,6 +443,7 @@ impl ToolHandler for RecordFindingHandler {
             .services
             .security_state
             .record_finding(FindingRecord {
+                id: args.id.unwrap_or_default(),
                 target: args.target,
                 vulnerability: args.vulnerability,
                 severity: args.severity,
@@ -475,11 +480,19 @@ impl ToolHandler for ReportWriteHandler {
         } = invocation;
         let arguments = payload_arguments(payload)?;
         let args: ReportWriteArgs = parse_arguments(&arguments)?;
-        let report_path = session
-            .services
-            .security_state
-            .write_report(args.summary.as_deref(), args.include_evidence)
-            .await?;
+        let report_path = if let Some(finding_id) = args.finding_id.as_deref() {
+            session
+                .services
+                .security_state
+                .write_finding_report(finding_id, args.summary.as_deref(), args.include_evidence)
+                .await?
+        } else {
+            session
+                .services
+                .security_state
+                .write_report(args.summary.as_deref(), args.include_evidence)
+                .await?
+        };
         let output = json!({
             "report_path": report_path,
         });

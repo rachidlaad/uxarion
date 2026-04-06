@@ -17,6 +17,8 @@ pub enum SlashCommand {
     ApiKey,
     Provider,
     Zap,
+    Findings,
+    Report,
     Fast,
     Approvals,
     Permissions,
@@ -97,6 +99,8 @@ impl SlashCommand {
             SlashCommand::ApiKey => "set or replace the saved API key",
             SlashCommand::Provider => "choose the default provider for future sessions",
             SlashCommand::Zap => "configure the ZAP API used for web scanning",
+            SlashCommand::Findings => "show persisted security findings for this session",
+            SlashCommand::Report => "write markdown reports from persisted security findings",
             SlashCommand::Fast => "toggle Fast mode to enable fastest inference at 2X plan usage",
             SlashCommand::Personality => "choose a communication style for Uxarion",
             SlashCommand::Realtime => "toggle realtime voice mode (experimental)",
@@ -135,6 +139,7 @@ impl SlashCommand {
                 | SlashCommand::ApiKey
                 | SlashCommand::Provider
                 | SlashCommand::Zap
+                | SlashCommand::Report
                 | SlashCommand::Fast
                 | SlashCommand::SandboxReadRoot
         )
@@ -153,6 +158,8 @@ impl SlashCommand {
             | SlashCommand::ApiKey
             | SlashCommand::Provider
             | SlashCommand::Zap
+            | SlashCommand::Findings
+            | SlashCommand::Report
             | SlashCommand::Fast
             | SlashCommand::Personality
             | SlashCommand::Approvals

@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests.rs
+expression: rendered
+---
+• Current findings (1):
+
+- finding-0001: Reflected XSS on https://example.com [high / confirmed / confirmed]

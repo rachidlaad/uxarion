@@ -131,6 +131,8 @@ pub(crate) struct EvidenceRecord {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct FindingRecord {
+    #[serde(default)]
+    pub id: String,
     pub target: String,
     pub vulnerability: String,
     pub severity: String,
@@ -523,7 +525,7 @@ impl SecuritySessionStateService {
 
     pub(crate) async fn record_finding(
         &self,
-        finding: FindingRecord,
+        mut finding: FindingRecord,
     ) -> Result<SecuritySessionState, FunctionCallError> {
         if !self.enabled {
             return Err(FunctionCallError::RespondToModel(
@@ -532,6 +534,9 @@ impl SecuritySessionStateService {
         }
 
         let mut state = self.state.lock().await;
+        if finding.id.trim().is_empty() {
+            finding.id = format!("finding-{:04}", state.findings.len() + 1);
+        }
         state.findings.push(finding);
         let snapshot = state.clone();
         drop(state);
@@ -585,6 +590,41 @@ impl SecuritySessionStateService {
             FunctionCallError::RespondToModel(format!("failed to write security report: {err}"))
         })?;
         Ok(self.report_path.clone())
+    }
+
+    pub(crate) async fn write_finding_report(
+        &self,
+        finding_id: &str,
+        summary: Option<&str>,
+        include_evidence: bool,
+    ) -> Result<PathBuf, FunctionCallError> {
+        if !self.enabled {
+            return Err(FunctionCallError::RespondToModel(
+                "security state is disabled for this session".to_string(),
+            ));
+        }
+
+        let mut snapshot = self.snapshot().await;
+        let Some(finding) = snapshot
+            .findings
+            .iter()
+            .find(|finding| finding.id == finding_id)
+            .cloned()
+        else {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "security finding `{finding_id}` was not found"
+            )));
+        };
+        snapshot.findings = vec![finding];
+        let report = render_report_markdown(&snapshot, summary, include_evidence);
+        let path = self.root_dir.join(format!(
+            "report-finding-{}.md",
+            sanitize_identifier(finding_id)
+        ));
+        fs::write(&path, report).await.map_err(|err| {
+            FunctionCallError::RespondToModel(format!("failed to write finding report: {err}"))
+        })?;
+        Ok(path)
     }
 
     pub(crate) async fn capture_expected_artifacts(
@@ -810,6 +850,8 @@ async fn load_state_from_disk(
     {
         state.findings = findings;
     }
+
+    ensure_finding_ids(&mut state.findings);
     Some(state)
 }
 
@@ -1014,6 +1056,14 @@ fn sanitize_identifier(input: &str) -> String {
     )
 }
 
+fn ensure_finding_ids(findings: &mut [FindingRecord]) {
+    for (index, finding) in findings.iter_mut().enumerate() {
+        if finding.id.trim().is_empty() {
+            finding.id = format!("finding-{:04}", index + 1);
+        }
+    }
+}
+
 fn extract_html_title(body: &str) -> Option<String> {
     let title_regex = Regex::new(r"(?is)<title[^>]*>(.*?)</title>").ok()?;
     title_regex
@@ -1101,12 +1151,13 @@ fn render_report_markdown(
     } else {
         for finding in &state.findings {
             lines.push(format!(
-                "- {} on {} [{} / {} / {}]",
+                "- {} on {} [{} / {} / {}] ({})",
                 finding.vulnerability,
                 finding.target,
                 finding.severity,
                 finding.confidence,
-                finding.status
+                finding.status,
+                finding.id
             ));
             if let Some(impact) = &finding.impact {
                 lines.push(format!("  Impact: {impact}"));
@@ -1201,6 +1252,7 @@ mod tests {
             .expect("scope");
         service
             .record_finding(FindingRecord {
+                id: String::new(),
                 target: "https://example.com".to_string(),
                 vulnerability: "Reflected XSS".to_string(),
                 severity: "high".to_string(),
@@ -1220,9 +1272,31 @@ mod tests {
             .expect("report");
         let report_contents = std::fs::read_to_string(report).expect("read report");
         assert!(report_contents.contains("Reflected XSS"));
+        assert!(report_contents.contains("finding-0001"));
 
         let state_contents = std::fs::read_to_string(&service.state_path).expect("read state");
         assert!(state_contents.contains("Reflected XSS"));
+        assert!(state_contents.contains("finding-0001"));
+    }
+
+    #[tokio::test]
+    async fn load_state_backfills_missing_finding_ids() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp
+            .path()
+            .join("security")
+            .join(ThreadId::default().to_string());
+        std::fs::create_dir_all(&root).expect("create root");
+        let findings_path = root.join("findings.json");
+        std::fs::write(
+            &findings_path,
+            r#"[{"target":"https://example.com","vulnerability":"XSS","severity":"high","confidence":"confirmed","status":"confirmed","evidence":[]}]"#,
+        )
+        .expect("write findings");
+        let state = load_state_from_disk(&root.join("state.json"), &findings_path)
+            .await
+            .expect("state");
+        assert_eq!(state.findings[0].id, "finding-0001");
     }
 
     #[tokio::test]

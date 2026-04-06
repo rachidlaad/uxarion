@@ -275,8 +275,10 @@ pub(crate) use self::agent::spawn_op_forwarder;
 mod session_header;
 use self::session_header::SessionHeader;
 mod provider_selection;
+mod reporting;
 mod skills;
 mod zap_selection;
+use self::reporting::ReportTarget;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;
 use self::skills::find_skill_mentions_with_tool_mentions;
@@ -4024,6 +4026,21 @@ impl ChatWidget {
             SlashCommand::Zap => {
                 self.open_zap_popup();
             }
+            SlashCommand::Findings => {
+                let Some(thread_id) = self.thread_id else {
+                    self.add_error_message(
+                        "Findings are unavailable until this session has a thread id.".to_string(),
+                    );
+                    return;
+                };
+                match reporting::findings_summary(&self.config.codex_home, thread_id) {
+                    Ok(summary) => self.add_info_message(summary, None),
+                    Err(err) => self.add_error_message(err),
+                }
+            }
+            SlashCommand::Report => {
+                self.dispatch_command_with_args(SlashCommand::Report, String::new(), Vec::new());
+            }
             SlashCommand::Fast => {
                 let next_tier = if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
                     None
@@ -4444,6 +4461,34 @@ impl ChatWidget {
                     .send(AppEvent::BeginWindowsSandboxGrantReadRoot {
                         path: prepared_args,
                     });
+                self.bottom_pane.drain_pending_submission_state();
+            }
+            SlashCommand::Report => {
+                let Some(thread_id) = self.thread_id else {
+                    self.add_error_message(
+                        "Reporting is unavailable until this session has a thread id.".to_string(),
+                    );
+                    return;
+                };
+                let target = if trimmed.is_empty() {
+                    Ok(ReportTarget::All)
+                } else {
+                    reporting::parse_report_target(trimmed)
+                };
+                let target = match target {
+                    Ok(target) => target,
+                    Err(err) => {
+                        self.add_error_message(err);
+                        return;
+                    }
+                };
+                match reporting::write_markdown_report(&self.config.codex_home, thread_id, target) {
+                    Ok(path) => self.add_info_message(
+                        format!("Report written to {}", path.display()),
+                        Some("Markdown is currently the only supported format.".to_string()),
+                    ),
+                    Err(err) => self.add_error_message(err),
+                }
                 self.bottom_pane.drain_pending_submission_state();
             }
             _ => self.dispatch_command(cmd),

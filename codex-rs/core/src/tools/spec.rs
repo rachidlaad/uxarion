@@ -819,6 +819,15 @@ fn create_zap_run_tool() -> ToolSpec {
         parameters: JsonSchema::Object {
             properties: BTreeMap::from([
                 (
+                    "id".to_string(),
+                    JsonSchema::String {
+                        description: Some(
+                            "Optional stable finding identifier. Omit to auto-assign."
+                                .to_string(),
+                        ),
+                    },
+                ),
+                (
                     "target".to_string(),
                     JsonSchema::String {
                         description: Some("Absolute in-scope HTTP or HTTPS URL to scan.".to_string()),
@@ -941,6 +950,14 @@ fn create_record_finding_tool() -> ToolSpec {
         parameters: JsonSchema::Object {
             properties: BTreeMap::from([
                 (
+                    "id".to_string(),
+                    JsonSchema::String {
+                        description: Some(
+                            "Optional stable finding identifier. Omit to auto-assign.".to_string(),
+                        ),
+                    },
+                ),
+                (
                     "target".to_string(),
                     JsonSchema::String {
                         description: Some("Affected URL, host, or endpoint.".to_string()),
@@ -1043,6 +1060,15 @@ fn create_report_write_tool() -> ToolSpec {
                     JsonSchema::Boolean {
                         description: Some(
                             "When true, append an evidence section to the report.".to_string(),
+                        ),
+                    },
+                ),
+                (
+                    "finding_id".to_string(),
+                    JsonSchema::String {
+                        description: Some(
+                            "Optional finding id to write a single-finding report artifact."
+                                .to_string(),
                         ),
                     },
                 ),
