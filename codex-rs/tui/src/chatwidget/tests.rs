@@ -2016,6 +2016,13 @@ fn lines_to_single_string(lines: &[ratatui::text::Line<'static>]) -> String {
     s
 }
 
+fn user_input_text(input: UserInput) -> String {
+    match input {
+        UserInput::Text { text, .. } => text,
+        _ => panic!("expected text input"),
+    }
+}
+
 #[tokio::test]
 async fn collab_spawn_end_shows_requested_model_and_effort() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
@@ -6109,6 +6116,122 @@ async fn slash_rollout_handles_missing_path() {
     assert!(
         rendered.contains("not available"),
         "expected missing rollout path message: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn slash_findings_renders_current_findings_summary() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let codex_home = tempdir().expect("tempdir");
+    let thread_id = ThreadId::new();
+    chat.config.codex_home = codex_home.path().to_path_buf();
+    chat.thread_id = Some(thread_id);
+
+    let security_dir = chat
+        .config
+        .codex_home
+        .join("security")
+        .join(thread_id.to_string());
+    std::fs::create_dir_all(&security_dir).expect("security dir");
+    let findings = serde_json::json!([
+        {
+            "id": "finding-0001",
+            "target": "https://example.com",
+            "vulnerability": "Reflected XSS",
+            "severity": "high",
+            "confidence": "confirmed",
+            "status": "confirmed"
+        },
+        {
+            "target": "https://example.org",
+            "vulnerability": "SQL Injection",
+            "severity": "critical",
+            "confidence": "confirmed",
+            "status": "confirmed"
+        }
+    ]);
+    std::fs::write(
+        security_dir.join("findings.json"),
+        serde_json::to_vec_pretty(&findings).expect("serialize findings"),
+    )
+    .expect("write findings");
+
+    chat.dispatch_command(SlashCommand::Findings);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected a findings summary info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("[finding-0001] Reflected XSS on https://example.com"),
+        "expected first finding in summary, got {rendered:?}"
+    );
+    assert!(
+        rendered.contains("[finding-0002] SQL Injection on https://example.org"),
+        "expected legacy finding id fallback in summary, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn slash_report_with_finding_id_submits_user_turn() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Report,
+        "finding finding-0001".to_string(),
+        Vec::new(),
+    );
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { input, .. } => {
+            let text = user_input_text(input);
+            assert!(
+                text.contains("finding `finding-0001`"),
+                "expected report prompt to include finding id, got {text:?}"
+            );
+        }
+        other => panic!("expected /report to submit a user turn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn slash_report_rejects_invalid_args() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Report, "finding".to_string(), Vec::new());
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one usage error message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Usage: /report [all|finding <id>]"),
+        "expected usage guidance, got {rendered:?}"
+    );
+}
+
+#[test]
+fn findings_summary_text_snapshot() {
+    let findings = vec![
+        super::reporting::PersistedFinding {
+            id: "finding-0001".to_string(),
+            target: "https://example.com".to_string(),
+            vulnerability: "Reflected XSS".to_string(),
+            severity: "high".to_string(),
+            confidence: "confirmed".to_string(),
+            status: "confirmed".to_string(),
+        },
+        super::reporting::PersistedFinding {
+            id: "finding-0002".to_string(),
+            target: "https://example.org".to_string(),
+            vulnerability: "SQL Injection".to_string(),
+            severity: "critical".to_string(),
+            confidence: "confirmed".to_string(),
+            status: "confirmed".to_string(),
+        },
+    ];
+    assert_snapshot!(
+        "findings_summary_text",
+        super::reporting::format_findings_summary(&findings)
     );
 }
 

@@ -113,6 +113,8 @@ struct ReportWriteArgs {
     summary: Option<String>,
     #[serde(default)]
     include_evidence: bool,
+    #[serde(default)]
+    finding_id: Option<String>,
 }
 
 fn default_exec_yield_time_ms() -> u64 {
@@ -439,6 +441,7 @@ impl ToolHandler for RecordFindingHandler {
             .services
             .security_state
             .record_finding(FindingRecord {
+                id: String::new(),
                 target: args.target,
                 vulnerability: args.vulnerability,
                 severity: args.severity,
@@ -478,7 +481,11 @@ impl ToolHandler for ReportWriteHandler {
         let report_path = session
             .services
             .security_state
-            .write_report(args.summary.as_deref(), args.include_evidence)
+            .write_report(
+                args.summary.as_deref(),
+                args.include_evidence,
+                args.finding_id.as_deref(),
+            )
             .await?;
         let output = json!({
             "report_path": report_path,

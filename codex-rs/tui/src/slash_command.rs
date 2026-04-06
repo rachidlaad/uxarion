@@ -42,6 +42,8 @@ pub enum SlashCommand {
     Mention,
     Status,
     DebugConfig,
+    Findings,
+    Report,
     Statusline,
     Theme,
     Mcp,
@@ -87,6 +89,8 @@ impl SlashCommand {
             SlashCommand::Skills => "use skills to improve how Uxarion performs specific tasks",
             SlashCommand::Status => "show current session configuration and token usage",
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
+            SlashCommand::Findings => "show current security findings",
+            SlashCommand::Report => "write a markdown security report",
             SlashCommand::Statusline => "configure which items appear in the status line",
             SlashCommand::Theme => "choose a syntax highlighting theme",
             SlashCommand::Ps => "list background terminals",
@@ -137,6 +141,7 @@ impl SlashCommand {
                 | SlashCommand::Zap
                 | SlashCommand::Fast
                 | SlashCommand::SandboxReadRoot
+                | SlashCommand::Report
         )
     }
 
@@ -173,6 +178,8 @@ impl SlashCommand {
             | SlashCommand::Skills
             | SlashCommand::Status
             | SlashCommand::DebugConfig
+            | SlashCommand::Findings
+            | SlashCommand::Report
             | SlashCommand::Ps
             | SlashCommand::Clean
             | SlashCommand::Mcp

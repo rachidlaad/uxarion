@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests.rs
+expression: "super::reporting::format_findings_summary(&findings)"
+---
+2 finding(s):
+- [finding-0001] Reflected XSS on https://example.com [high / confirmed / confirmed]
+- [finding-0002] SQL Injection on https://example.org [critical / confirmed / confirmed]

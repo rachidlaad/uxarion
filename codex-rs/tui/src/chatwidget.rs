@@ -275,8 +275,10 @@ pub(crate) use self::agent::spawn_op_forwarder;
 mod session_header;
 use self::session_header::SessionHeader;
 mod provider_selection;
+mod reporting;
 mod skills;
 mod zap_selection;
+use self::reporting::ReportScope;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;
 use self::skills::find_skill_mentions_with_tool_mentions;
@@ -4214,6 +4216,12 @@ impl ChatWidget {
             SlashCommand::DebugConfig => {
                 self.add_debug_config_output();
             }
+            SlashCommand::Findings => {
+                self.show_security_findings();
+            }
+            SlashCommand::Report => {
+                self.run_report_command(ReportScope::All);
+            }
             SlashCommand::Statusline => {
                 self.open_status_line_setup();
             }
@@ -4446,8 +4454,45 @@ impl ChatWidget {
                     });
                 self.bottom_pane.drain_pending_submission_state();
             }
+            SlashCommand::Report if !trimmed.is_empty() => {
+                let Some((prepared_args, _prepared_elements)) =
+                    self.bottom_pane.prepare_inline_args_submission(false)
+                else {
+                    return;
+                };
+                match reporting::parse_report_scope(prepared_args.as_str()) {
+                    Ok(scope) => self.run_report_command(scope),
+                    Err(message) => self.add_error_message(message),
+                }
+                self.bottom_pane.drain_pending_submission_state();
+            }
             _ => self.dispatch_command(cmd),
         }
+    }
+
+    fn show_security_findings(&mut self) {
+        match reporting::load_findings(&self.config.codex_home, self.thread_id) {
+            Ok(findings) => {
+                let message = reporting::format_findings_summary(&findings);
+                let hint = if findings.is_empty() {
+                    Some(
+                        "Record findings during the session, then run /findings again.".to_string(),
+                    )
+                } else {
+                    Some(
+                        "Run /report or /report finding <id> to generate Markdown artifacts."
+                            .to_string(),
+                    )
+                };
+                self.add_info_message(message, hint);
+            }
+            Err(err) => self.add_error_message(err),
+        }
+    }
+
+    fn run_report_command(&mut self, scope: ReportScope<'_>) {
+        let prompt = reporting::report_prompt(scope);
+        self.submit_user_message(prompt.into());
     }
 
     fn show_rename_prompt(&mut self) {
