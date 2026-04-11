@@ -101,7 +101,7 @@ release_url_for_asset() {
   asset="$1"
   resolved_version="$2"
 
-  printf 'https://raw.githubusercontent.com/rachidlaad/uxarion/main/releases/v%s/%s\n' "$resolved_version" "$asset"
+  printf 'https://github.com/rachidlaad/uxarion/releases/download/v%s/%s\n' "$resolved_version" "$asset"
 }
 
 require_command() {

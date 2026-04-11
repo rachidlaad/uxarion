@@ -38,7 +38,7 @@ Short-term priorities:
 - update prompts and checks: `codex-rs/tui/src/updates.rs`, `codex-rs/tui/src/update_action.rs`
 - npm/runtime distribution: `codex-cli/bin/uxarion.js`, `codex-cli/package.json`
 - public docs: `README.md`, `docs/config.md`, `docs/install.md`
-- runtime artifacts: `releases/`
+- runtime artifacts: GitHub Release assets; local release scratch output may live under `releases/`
 
 ## Expectations for agents and maintainers
 

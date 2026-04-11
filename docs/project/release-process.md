@@ -34,7 +34,7 @@ Notes:
 
 ## Package the runtime archive
 
-The runtime archive lives under:
+The runtime archive is cut locally as:
 
 - `releases/vX.Y.Z/uxarion-X.Y.Z-linux-x64.tar.xz`
 
@@ -45,6 +45,10 @@ Current packaging pattern:
 3. repack under the new version directory
 
 The archive should contain the expected `package/vendor/...` layout used by the npm wrapper.
+
+The canonical public runtime path is the GitHub Release asset:
+
+- `https://github.com/rachidlaad/uxarion/releases/download/vX.Y.Z/uxarion-X.Y.Z-linux-x64.tar.xz`
 
 ## Verify before shipping
 
@@ -67,15 +71,20 @@ npm view uxarion version
 
 1. push source commits to `uxarion/main`
 2. create the GitHub release and attach the runtime archive
-3. publish npm from `codex-cli/`
+3. let the GitHub Actions npm publish workflow publish the wrapper package from the tagged source
+
+Required repo secret:
+
+- `NPM_TOKEN`
 
 Typical commands:
 
 ```bash
 git push uxarion HEAD:main
 gh release create vX.Y.Z releases/vX.Y.Z/uxarion-X.Y.Z-linux-x64.tar.xz --repo rachidlaad/uxarion --target main
-cd codex-cli && npm publish
 ```
+
+The npm publish workflow should be triggered by the published GitHub release. If needed, rerun it manually with `workflow_dispatch` from the GitHub Actions UI after confirming the release asset exists.
 
 ## Public verification
 

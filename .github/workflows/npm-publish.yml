@@ -1,0 +1,88 @@
+name: npm-publish
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_REPO: rachidlaad/uxarion
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve publish metadata
+        id: vars
+        run: |
+          package_version=$(node -p "require('./codex-cli/package.json').version")
+          runtime_version=$(node -p "require('./codex-cli/package.json').uxarionRuntimeVersion")
+          expected_tag="v${package_version}"
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            tag_name="${{ github.event.release.tag_name }}"
+            if [ "$tag_name" != "$expected_tag" ]; then
+              echo "Release tag $tag_name does not match package version $expected_tag" >&2
+              exit 1
+            fi
+          else
+            tag_name="$expected_tag"
+          fi
+
+          runtime_asset_url="https://github.com/${EXPECTED_REPO}/releases/download/${tag_name}/uxarion-${runtime_version}-linux-x64.tar.xz"
+
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "runtime_version=$runtime_version" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          echo "runtime_asset_url=$runtime_asset_url" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure npm token is configured
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN secret is required for npm publish." >&2
+            exit 1
+          fi
+
+      - name: Verify runtime asset exists
+        run: |
+          curl --fail --silent --show-error --location --head "${{ steps.vars.outputs.runtime_asset_url }}"
+
+      - name: Ensure package is wrapper-only in CI
+        run: |
+          rm -rf ./codex-cli/vendor
+
+      - name: Preview npm package
+        working-directory: ./codex-cli
+        run: npm pack --dry-run
+
+      - name: Check published npm version
+        id: npm
+        working-directory: ./codex-cli
+        run: |
+          published_version=$(npm view uxarion version 2>/dev/null || true)
+          echo "published_version=$published_version" >> "$GITHUB_OUTPUT"
+          if [ "$published_version" = "${{ steps.vars.outputs.package_version }}" ]; then
+            echo "Version $published_version is already published; skipping npm publish."
+          fi
+
+      - name: Publish to npm
+        if: steps.npm.outputs.published_version != steps.vars.outputs.package_version
+        working-directory: ./codex-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

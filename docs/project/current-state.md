@@ -52,7 +52,7 @@ Other platforms may exist in source or packaging scaffolding, but the reliable p
 - Optional Uxarion telemetry can emit anonymous `app_opened`, `session_started`, and `report_generated` events when `[uxarion_telemetry]` is configured.
 - `/provider` supports API, Ollama, and LM Studio.
 - ZAP is configurable through `/zap`.
-- npm installs download the native runtime from the `uxarion` repo release path.
+- npm installs download the native runtime from `uxarion` GitHub Release assets.
 - Update checks read from the `uxarion` GitHub releases feed.
 
 ## Important current limits

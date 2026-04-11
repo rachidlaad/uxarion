@@ -61,14 +61,15 @@ The wrapper:
 
 ### Release artifacts
 
-Versioned runtime archives are committed under:
+Versioned runtime archives are published as GitHub Release assets under:
+
+- `https://github.com/rachidlaad/uxarion/releases/download/vX.Y.Z/`
+
+Local packaging may still stage archives under:
 
 - `releases/vX.Y.Z/`
 
-Those artifacts are used for:
-
-- GitHub Releases assets
-- the raw GitHub download path used by the npm wrapper
+Those local artifacts are release scratch output, not the canonical runtime download path for npm installs.
 
 ## Provider model
 

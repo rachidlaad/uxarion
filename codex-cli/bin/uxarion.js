@@ -48,6 +48,7 @@ const UXARION_DOWNLOAD_BASE_URLS = [
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean),
+  "https://github.com/rachidlaad/uxarion/releases/download",
   "https://raw.githubusercontent.com/rachidlaad/uxarion/main/releases",
 ].filter(Boolean);
 
