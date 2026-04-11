@@ -31,7 +31,7 @@ The legacy `codex-hacker` fork is no longer the source of truth.
 
 ## Current shipped version
 
-- Latest shipped version at the time of this document: `0.1.9`
+- Latest shipped version at the time of this document: `0.1.10`
 
 ## Effective platform support
 
