@@ -1505,6 +1505,19 @@ profile = "project"
 }
 
 #[test]
+fn built_in_security_profile_resolves_without_config_entry() -> std::io::Result<()> {
+    let cfg = ConfigToml {
+        profile: Some("security".to_string()),
+        ..Default::default()
+    };
+
+    let profile = cfg.get_config_profile(None)?;
+
+    assert_eq!(profile, ConfigProfile::default());
+    Ok(())
+}
+
+#[test]
 fn profile_sandbox_mode_overrides_base() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let mut profiles = HashMap::new();

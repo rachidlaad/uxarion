@@ -2186,6 +2186,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         &model_info,
         session_configuration.session_source.clone(),
     );
+    let uxarion_telemetry = UxarionTelemetryClient::new(Arc::clone(&config));
 
     let state = SessionState::new(session_configuration.clone());
     let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.clone()));
@@ -2255,7 +2256,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
                 crate::security::is_security_config(config.as_ref()),
                 crate::security::resolve_zap_config(Some(config.as_ref())),
             )
-            .await,
+            .await
+            .with_uxarion_telemetry(uxarion_telemetry.clone()),
         ),
     };
     let js_repl = Arc::new(JsReplHandle::with_node_path(
@@ -2283,6 +2285,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         tx_event,
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
+        _uxarion_telemetry: uxarion_telemetry,
         state: Mutex::new(state),
         features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),
@@ -2756,6 +2759,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         &model_info,
         session_configuration.session_source.clone(),
     );
+    let uxarion_telemetry = UxarionTelemetryClient::new(Arc::clone(&config));
 
     let state = SessionState::new(session_configuration.clone());
     let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.clone()));
@@ -2825,7 +2829,8 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
                 crate::security::is_security_config(config.as_ref()),
                 crate::security::resolve_zap_config(Some(config.as_ref())),
             )
-            .await,
+            .await
+            .with_uxarion_telemetry(uxarion_telemetry.clone()),
         ),
     };
     let js_repl = Arc::new(JsReplHandle::with_node_path(
@@ -2853,6 +2858,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         tx_event,
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
+        _uxarion_telemetry: uxarion_telemetry,
         state: Mutex::new(state),
         features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),

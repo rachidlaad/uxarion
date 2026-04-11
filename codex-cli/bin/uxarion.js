@@ -51,6 +51,32 @@ const UXARION_DOWNLOAD_BASE_URLS = [
   "https://raw.githubusercontent.com/rachidlaad/uxarion/main/releases",
 ].filter(Boolean);
 
+const UXARION_NON_RUNTIME_SUBCOMMANDS = new Set([
+  "app-server",
+  "apply",
+  "cloud",
+  "cloud-tasks",
+  "completion",
+  "debug",
+  "execpolicy",
+  "features",
+  "login",
+  "logout",
+  "mcp",
+  "mcp-server",
+  "responses-api-proxy",
+  "sandbox",
+  "stdio-to-uds",
+]);
+
+const UXARION_RUNTIME_SUBCOMMANDS = new Set([
+  "e",
+  "exec",
+  "fork",
+  "resume",
+  "review",
+]);
+
 const { platform, arch } = process;
 
 let targetTriple = null;
@@ -128,6 +154,62 @@ function getUpdatedPath(newDirs) {
     ...existingPath.split(pathSep).filter(Boolean),
   ].join(pathSep);
   return updatedPath;
+}
+
+function hasExplicitProfile(args) {
+  return args.some(
+    (arg, index) => arg === "--profile" || arg === "-p" || args[index - 1] === "--profile",
+  );
+}
+
+function isHelpOnlyInvocation(args) {
+  return args.some((arg) =>
+    ["-h", "--help", "help", "-V", "--version"].includes(arg),
+  );
+}
+
+function shouldInjectSecurityProfile(args) {
+  if (hasExplicitProfile(args) || isHelpOnlyInvocation(args)) {
+    return false;
+  }
+
+  const firstPositionalArg = args.find((arg) => !arg.startsWith("-"));
+  if (!firstPositionalArg) {
+    return true;
+  }
+
+  if (UXARION_RUNTIME_SUBCOMMANDS.has(firstPositionalArg)) {
+    return true;
+  }
+
+  if (UXARION_NON_RUNTIME_SUBCOMMANDS.has(firstPositionalArg)) {
+    return false;
+  }
+
+  return true;
+}
+
+function withInjectedSecurityProfile(args) {
+  if (!shouldInjectSecurityProfile(args)) {
+    return args;
+  }
+
+  const firstPositionalIndex = args.findIndex((arg) => !arg.startsWith("-"));
+  if (firstPositionalIndex === -1) {
+    return ["--profile", "security", ...args];
+  }
+
+  const firstPositionalArg = args[firstPositionalIndex];
+  if (UXARION_RUNTIME_SUBCOMMANDS.has(firstPositionalArg)) {
+    return [
+      ...args.slice(0, firstPositionalIndex + 1),
+      "--profile",
+      "security",
+      ...args.slice(firstPositionalIndex + 1),
+    ];
+  }
+
+  return ["--profile", "security", ...args];
 }
 
 function getUxarionCacheRoot() {
@@ -368,9 +450,13 @@ if (existsSync(pathDir)) {
   additionalDirs.push(pathDir);
 }
 const updatedPath = getUpdatedPath(additionalDirs);
+const processArgs = process.argv.slice(2);
+const childArgs = withInjectedSecurityProfile(processArgs);
+const uxarionHome = process.env.UXARION_HOME || getUxarionHome();
 
 const env = { ...process.env, PATH: updatedPath };
-env.CODEX_HOME ||= getUxarionHome();
+env.CODEX_HOME = uxarionHome;
+env.UXARION_DEFAULT_PROFILE ||= "security";
 mkdirSync(env.CODEX_HOME, { recursive: true });
 const packageManagerEnvVar =
   detectPackageManager() === "bun"
@@ -378,7 +464,7 @@ const packageManagerEnvVar =
     : "UXARION_MANAGED_BY_NPM";
 env[packageManagerEnvVar] = "1";
 
-const child = spawn(binaryPath, process.argv.slice(2), {
+const child = spawn(binaryPath, childArgs, {
   stdio: "inherit",
   env,
 });

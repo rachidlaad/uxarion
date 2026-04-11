@@ -34,6 +34,8 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use supports_color::Stream;
 
+const UXARION_DEFAULT_PROFILE_ENV_VAR: &str = "UXARION_DEFAULT_PROFILE";
+
 #[cfg(target_os = "macos")]
 mod app_cmd;
 #[cfg(target_os = "macos")]
@@ -575,12 +577,23 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         config_overrides: mut root_config_overrides,
         feature_toggles,
         mut interactive,
-        subcommand,
+        mut subcommand,
     } = MultitoolCli::parse();
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
     root_config_overrides.raw_overrides.extend(toggle_overrides);
+
+    match &mut subcommand {
+        None | Some(Subcommand::Resume(_)) | Some(Subcommand::Fork(_)) => {
+            apply_uxarion_default_profile(&mut interactive.config_profile);
+        }
+        Some(Subcommand::Exec(exec_cli)) => {
+            apply_uxarion_default_profile(&mut exec_cli.config_profile);
+        }
+        Some(Subcommand::Review(_)) => {}
+        Some(_) => {}
+    }
 
     match subcommand {
         None => {
@@ -592,6 +605,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             handle_app_exit(exit_info)?;
         }
         Some(Subcommand::Exec(mut exec_cli)) => {
+            merge_exec_cli_flags(&mut exec_cli, interactive);
             prepend_config_flags(
                 &mut exec_cli.config_overrides,
                 root_config_overrides.clone(),
@@ -600,6 +614,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         Some(Subcommand::Review(review_args)) => {
             let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
+            apply_uxarion_default_profile(&mut exec_cli.config_profile);
+            merge_exec_cli_flags(&mut exec_cli, interactive);
             exec_cli.command = Some(ExecCommand::Review(review_args));
             prepend_config_flags(
                 &mut exec_cli.config_overrides,
@@ -847,6 +863,26 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn resolved_uxarion_default_profile(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn apply_uxarion_default_profile_from_value(profile: &mut Option<String>, value: Option<&str>) {
+    if profile.is_none()
+        && let Some(default_profile) = resolved_uxarion_default_profile(value)
+    {
+        *profile = Some(default_profile);
+    }
+}
+
+fn apply_uxarion_default_profile(profile: &mut Option<String>) {
+    let env_value = std::env::var(UXARION_DEFAULT_PROFILE_ENV_VAR).ok();
+    apply_uxarion_default_profile_from_value(profile, env_value.as_deref());
 }
 
 async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {
@@ -1101,6 +1137,45 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
         .extend(subcommand_cli.config_overrides.raw_overrides);
 }
 
+fn merge_exec_cli_flags(exec_cli: &mut ExecCli, root_cli: TuiCli) {
+    if exec_cli.prompt.is_none() {
+        exec_cli.prompt = root_cli
+            .prompt
+            .map(|prompt| prompt.replace("\r\n", "\n").replace('\r', "\n"));
+    }
+    if exec_cli.images.is_empty() && !root_cli.images.is_empty() {
+        exec_cli.images = root_cli.images;
+    }
+    if exec_cli.model.is_none() {
+        exec_cli.model = root_cli.model;
+    }
+    if !exec_cli.oss {
+        exec_cli.oss = root_cli.oss;
+    }
+    if exec_cli.oss_provider.is_none() {
+        exec_cli.oss_provider = root_cli.oss_provider;
+    }
+    if exec_cli.config_profile.is_none() {
+        exec_cli.config_profile = root_cli.config_profile;
+    }
+    if exec_cli.sandbox_mode.is_none() {
+        exec_cli.sandbox_mode = root_cli.sandbox_mode;
+    }
+    if !exec_cli.full_auto {
+        exec_cli.full_auto = root_cli.full_auto;
+    }
+    if !exec_cli.dangerously_bypass_approvals_and_sandbox {
+        exec_cli.dangerously_bypass_approvals_and_sandbox =
+            root_cli.dangerously_bypass_approvals_and_sandbox;
+    }
+    if exec_cli.cwd.is_none() {
+        exec_cli.cwd = root_cli.cwd;
+    }
+    if exec_cli.add_dir.is_empty() && !root_cli.add_dir.is_empty() {
+        exec_cli.add_dir = root_cli.add_dir;
+    }
+}
+
 fn print_completion(cmd: CompletionCommand) {
     let mut app = MultitoolCli::command();
     let name = "uxarion";
@@ -1166,6 +1241,24 @@ mod tests {
         finalize_fork_interactive(interactive, root_overrides, session_id, last, all, fork_cli)
     }
 
+    fn finalized_exec_from_args(args: &[&str]) -> ExecCli {
+        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        let MultitoolCli {
+            interactive,
+            config_overrides: root_overrides,
+            subcommand,
+            feature_toggles: _,
+        } = cli;
+
+        let Some(Subcommand::Exec(mut exec_cli)) = subcommand else {
+            panic!("expected exec subcommand");
+        };
+
+        merge_exec_cli_flags(&mut exec_cli, interactive);
+        prepend_config_flags(&mut exec_cli.config_overrides, root_overrides);
+        exec_cli
+    }
+
     #[test]
     fn exec_resume_last_accepts_prompt_positional() {
         let cli =
@@ -1182,6 +1275,34 @@ mod tests {
         assert!(args.last);
         assert_eq!(args.session_id, None);
         assert_eq!(args.prompt.as_deref(), Some("2+2"));
+    }
+
+    #[test]
+    fn exec_inherits_root_profile_flag() {
+        let exec = finalized_exec_from_args(["codex", "--profile", "security", "exec"].as_ref());
+        assert_eq!(exec.config_profile.as_deref(), Some("security"));
+    }
+
+    #[test]
+    fn exec_accepts_profile_flag_after_subcommand_name() {
+        let exec = finalized_exec_from_args(["codex", "exec", "--profile", "security"].as_ref());
+        assert_eq!(exec.config_profile.as_deref(), Some("security"));
+    }
+
+    #[test]
+    fn exec_subcommand_profile_takes_precedence_over_root_profile() {
+        let exec = finalized_exec_from_args(
+            [
+                "codex",
+                "--profile",
+                "security",
+                "exec",
+                "--profile",
+                "custom",
+            ]
+            .as_ref(),
+        );
+        assert_eq!(exec.config_profile.as_deref(), Some("custom"));
     }
 
     #[test]
@@ -1511,6 +1632,30 @@ mod tests {
             panic!("expected features disable");
         };
         assert_eq!(feature, "shell_tool");
+    }
+
+    #[test]
+    fn resolved_uxarion_default_profile_trims_and_ignores_empty_values() {
+        assert_eq!(
+            resolved_uxarion_default_profile(Some(" security ")),
+            Some("security".to_string())
+        );
+        assert_eq!(resolved_uxarion_default_profile(Some("   ")), None);
+        assert_eq!(resolved_uxarion_default_profile(None), None);
+    }
+
+    #[test]
+    fn apply_uxarion_default_profile_preserves_explicit_profile() {
+        let mut profile = Some("custom".to_string());
+        apply_uxarion_default_profile_from_value(&mut profile, Some("security"));
+        assert_eq!(profile, Some("custom".to_string()));
+    }
+
+    #[test]
+    fn apply_uxarion_default_profile_sets_missing_profile() {
+        let mut profile = None;
+        apply_uxarion_default_profile_from_value(&mut profile, Some("security"));
+        assert_eq!(profile, Some("security".to_string()));
     }
 
     #[test]

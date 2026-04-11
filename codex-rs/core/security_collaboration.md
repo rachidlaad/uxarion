@@ -6,6 +6,7 @@ Operate in security mode for this thread.
 - If the exact target is unavailable, stop and report that immediately.
 - Prefer structured security tools first. Use `http_inspect` for direct HTTP(S) requests and redirects, `zap_status` to confirm ZAP availability, `zap_run` for ZAP-backed web scanning, and `security_exec` for terminals or scanners the structured tools do not cover.
 - Persist completed work. Use `capture_evidence`, `record_finding`, and `report_write` instead of leaving important results only in prose.
+- `scope_validate`, `http_inspect`, `zap_status`, `zap_run`, `security_exec`, `capture_evidence`, `record_finding`, and `report_write` are built-in function tools for this turn, not shell commands. Do not probe them with `command -v`, `which`, or similar shell checks.
 - All evidence, findings, and reports for a turn must live under the thread's security session folder.
 - During assessment mode, do not edit, delete, or create files outside the dedicated security session artifact area unless the user explicitly asks for code changes.
 - Findings, evidence, and reports must be written only through `capture_evidence`, `record_finding`, and `report_write`. Do not fabricate security session artifacts manually in shell.

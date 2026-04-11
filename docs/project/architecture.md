@@ -55,7 +55,9 @@ The wrapper:
 - downloads the matching runtime archive if needed
 - extracts it into the local runtime cache
 - launches the native binary
+- forces `CODEX_HOME` to `UXARION_HOME` or `~/.uxarion` so the wrapper does not inherit the desktop Codex home by accident
 - sets install-channel environment markers for the child process
+- defaults runtime sessions to the `security` profile unless the user overrides it explicitly
 
 ### Release artifacts
 

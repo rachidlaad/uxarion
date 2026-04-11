@@ -135,6 +135,7 @@ pub(crate) const PROJECT_DOC_MAX_BYTES: usize = 32 * 1024; // 32 KiB
 pub(crate) const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
 pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
 pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
+const BUILT_IN_SECURITY_PROFILE_NAME: &str = "security";
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
@@ -1634,8 +1635,8 @@ impl ConfigToml {
 
         match profile {
             Some(key) => {
-                if let Some(profile) = self.profiles.get(key.as_str()) {
-                    return Ok(profile.clone());
+                if let Some(profile) = self.resolve_profile(key.as_str()) {
+                    return Ok(profile);
                 }
 
                 Err(std::io::Error::new(
@@ -1645,6 +1646,13 @@ impl ConfigToml {
             }
             None => Ok(ConfigProfile::default()),
         }
+    }
+
+    fn resolve_profile(&self, key: &str) -> Option<ConfigProfile> {
+        self.profiles
+            .get(key)
+            .cloned()
+            .or_else(|| (key == BUILT_IN_SECURITY_PROFILE_NAME).then(ConfigProfile::default))
     }
 }
 
@@ -1916,16 +1924,12 @@ impl Config {
             .or(cfg.profile.as_ref())
             .cloned();
         let config_profile = match active_profile_name.as_ref() {
-            Some(key) => cfg
-                .profiles
-                .get(key)
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("config profile `{key}` not found"),
-                    )
-                })?
-                .clone(),
+            Some(key) => cfg.resolve_profile(key).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("config profile `{key}` not found"),
+                )
+            })?,
             None => ConfigProfile::default(),
         };
         let feature_overrides = FeatureOverrides {

@@ -25,6 +25,8 @@ Short-term priorities:
 - strengthen evidence and reporting
 - harden exact-target guardrails so security turns do not wander into unrelated repos or ad hoc report paths
 - enforce built-in-tool-only writes for evidence, findings, and reports, and block broad local artifact searches once the current session paths are known
+- keep the `uxarion` launcher isolated from inherited desktop `CODEX_HOME` by forcing `UXARION_HOME` or `~/.uxarion`
+- keep the `uxarion` launcher defaulting runtime sessions into the built-in `security` profile unless the user overrides it
 - add privacy-safe anonymous telemetry for growth tracking without collecting prompts, targets, or findings content
 - keep provider and ZAP setup understandable
 

@@ -3,8 +3,20 @@ use super::zap;
 use crate::config::types::SecurityZapConfig;
 use serde::Serialize;
 
+const STRUCTURED_SECURITY_TOOL_NAMES: &[&str] = &[
+    "scope_validate",
+    "http_inspect",
+    "zap_status",
+    "zap_run",
+    "security_exec",
+    "capture_evidence",
+    "record_finding",
+    "report_write",
+];
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SecurityToolInventory {
+    pub structured_tools: Vec<String>,
     pub available: Vec<String>,
     pub missing: Vec<String>,
     pub zap_enabled: bool,
@@ -18,6 +30,10 @@ pub(crate) struct SecurityToolInventory {
 impl SecurityToolInventory {
     pub(crate) fn disabled(zap_config: &SecurityZapConfig) -> Self {
         Self {
+            structured_tools: STRUCTURED_SECURITY_TOOL_NAMES
+                .iter()
+                .map(|tool| (*tool).to_string())
+                .collect(),
             available: Vec::new(),
             missing: Vec::new(),
             zap_enabled: zap_config.enabled,
@@ -45,6 +61,10 @@ impl SecurityToolInventory {
         let zap_status = zap::probe_zap_api(zap_config).await;
 
         Self {
+            structured_tools: STRUCTURED_SECURITY_TOOL_NAMES
+                .iter()
+                .map(|tool| (*tool).to_string())
+                .collect(),
             available,
             missing,
             zap_enabled: zap_status.enabled,

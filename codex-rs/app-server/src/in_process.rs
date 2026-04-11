@@ -92,6 +92,26 @@ pub const DEFAULT_IN_PROCESS_CHANNEL_CAPACITY: usize = CHANNEL_CAPACITY;
 
 type PendingClientRequestResponse = std::result::Result<Result, JSONRPCErrorError>;
 
+fn with_active_profile_cli_override(
+    cli_overrides: Vec<(String, TomlValue)>,
+    config: &Config,
+) -> Vec<(String, TomlValue)> {
+    let Some(active_profile) = config.active_profile.as_ref() else {
+        return cli_overrides;
+    };
+
+    if cli_overrides.iter().any(|(key, _)| key == "profile") {
+        return cli_overrides;
+    }
+
+    let mut cli_overrides = cli_overrides;
+    cli_overrides.push((
+        "profile".to_string(),
+        TomlValue::String(active_profile.clone()),
+    ));
+    cli_overrides
+}
+
 fn server_notification_requires_delivery(notification: &ServerNotification) -> bool {
     matches!(notification, ServerNotification::TurnCompleted(_))
 }
@@ -396,11 +416,13 @@ fn start_uninitialized(args: InProcessStartArgs) -> InProcessClientHandle {
         let processor_outgoing = Arc::clone(&outgoing_message_sender);
         let (processor_tx, mut processor_rx) = mpsc::channel::<ProcessorCommand>(channel_capacity);
         let mut processor_handle = tokio::spawn(async move {
+            let cli_overrides =
+                with_active_profile_cli_override(args.cli_overrides, args.config.as_ref());
             let mut processor = MessageProcessor::new(MessageProcessorArgs {
                 outgoing: Arc::clone(&processor_outgoing),
                 arg0_paths: args.arg0_paths,
                 config: args.config,
-                cli_overrides: args.cli_overrides,
+                cli_overrides,
                 loader_overrides: args.loader_overrides,
                 cloud_requirements: args.cloud_requirements,
                 feedback: args.feedback,
@@ -814,6 +836,38 @@ mod tests {
                 .await
                 .expect("in-process runtime should shutdown cleanly");
         }
+    }
+
+    #[test]
+    fn adds_active_profile_override_when_missing() {
+        let mut config = Config::load_default_with_cli_overrides(Vec::new())
+            .expect("default config should load");
+        config.active_profile = Some("security".to_string());
+
+        let overrides = with_active_profile_cli_override(Vec::new(), &config);
+
+        assert_eq!(
+            overrides,
+            vec![(
+                "profile".to_string(),
+                TomlValue::String("security".to_string())
+            )]
+        );
+    }
+
+    #[test]
+    fn preserves_existing_profile_override() {
+        let mut config = Config::load_default_with_cli_overrides(Vec::new())
+            .expect("default config should load");
+        config.active_profile = Some("security".to_string());
+        let existing = vec![(
+            "profile".to_string(),
+            TomlValue::String("custom".to_string()),
+        )];
+
+        let overrides = with_active_profile_cli_override(existing.clone(), &config);
+
+        assert_eq!(overrides, existing);
     }
 
     #[tokio::test]
