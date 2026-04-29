@@ -4,6 +4,7 @@ use crate::config::types::SecurityZapConfig;
 use crate::default_client::build_reqwest_client;
 use crate::function_tool::FunctionCallError;
 use crate::security::parse_host;
+use crate::security::url_host_with_port;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -328,11 +329,10 @@ impl ZapClient {
             let Some(url) = value.as_str() else {
                 continue;
             };
-            if Url::parse(url)
-                .ok()
-                .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
-                .is_some_and(|url_host| url_host == host)
-            {
+            if Url::parse(url).ok().is_some_and(|parsed| {
+                url_host_with_port(&parsed).as_deref() == Some(host)
+                    || parsed.host_str().map(str::to_ascii_lowercase).as_deref() == Some(host)
+            }) {
                 discovered.insert(url.to_string());
             }
         }

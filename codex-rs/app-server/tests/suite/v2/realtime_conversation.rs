@@ -36,7 +36,7 @@ use tempfile::TempDir;
 use tokio::time::timeout;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
-const STARTUP_CONTEXT_HEADER: &str = "Startup context from Codex.";
+const STARTUP_CONTEXT_HEADER: &str = "Startup context from Uxarion.";
 
 #[tokio::test]
 async fn realtime_conversation_streams_v2_notifications() -> Result<()> {

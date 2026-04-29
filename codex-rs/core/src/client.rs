@@ -34,6 +34,7 @@ use crate::api_bridge::CoreAuthProvider;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::UnauthorizedRecovery;
+use codex_api::AuthProvider as _;
 use codex_api::CompactClient as ApiCompactClient;
 use codex_api::CompactionInput as ApiCompactionInput;
 use codex_api::MemoriesClient as ApiMemoriesClient;
@@ -286,6 +287,11 @@ impl ModelClient {
         if prompt.input.is_empty() {
             return Ok(Vec::new());
         }
+        if !matches!(self.state.provider.wire_api, WireApi::Responses) {
+            return Err(CodexErr::UnsupportedOperation(
+                "Conversation compaction is not yet supported for this provider.".to_string(),
+            ));
+        }
         let client_setup = self.current_client_setup().await?;
         let transport = ReqwestTransport::new(build_reqwest_client());
         let request_telemetry = Self::build_request_telemetry(session_telemetry);
@@ -325,6 +331,11 @@ impl ModelClient {
     ) -> Result<Vec<ApiMemorySummarizeOutput>> {
         if raw_memories.is_empty() {
             return Ok(Vec::new());
+        }
+        if !matches!(self.state.provider.wire_api, WireApi::Responses) {
+            return Err(CodexErr::UnsupportedOperation(
+                "Memory summarization is not yet supported for this provider.".to_string(),
+            ));
         }
 
         let client_setup = self.current_client_setup().await?;
@@ -1017,6 +1028,22 @@ impl ModelClientSession {
                     summary,
                     service_tier,
                     turn_metadata_header,
+                )
+                .await
+            }
+            WireApi::AnthropicMessages => {
+                let client_setup = self.client.current_client_setup().await?;
+                let api_key = client_setup.api_auth.bearer_token().ok_or_else(|| {
+                    CodexErr::UnsupportedOperation(
+                        "Anthropic requests require an API key.".to_string(),
+                    )
+                })?;
+                crate::anthropic::send_message(
+                    &build_reqwest_client(),
+                    &client_setup.api_provider,
+                    &api_key,
+                    prompt,
+                    model_info,
                 )
                 .await
             }

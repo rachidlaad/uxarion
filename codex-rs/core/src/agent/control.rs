@@ -630,7 +630,11 @@ mod tests {
                 sleep(Duration::from_millis(25)).await;
             }
         };
-        timeout(Duration::from_secs(2), wait).await.is_ok()
+        // This notification is delivered by an async completion watcher. Under
+        // full-suite load the watcher can miss a 2s polling window even though
+        // the notification eventually arrives, which makes the test flaky
+        // without indicating a product regression.
+        timeout(Duration::from_secs(5), wait).await.is_ok()
     }
 
     #[tokio::test]

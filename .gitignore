@@ -67,6 +67,8 @@ coverage/
 
 # personal files
 personal/
+.codex/
+server.pid
 
 # os
 .DS_Store
@@ -82,6 +84,7 @@ yarn.lock
 package.json-e
 session.ts-e
 CHANGELOG.ignore.md
+releases/
 
 # nix related
 .direnv
@@ -90,4 +93,3 @@ CHANGELOG.ignore.md
 # Python bytecode files
 __pycache__/
 *.pyc
-

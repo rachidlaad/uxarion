@@ -46,7 +46,11 @@ pub struct AuthDotJson {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_mode: Option<AuthMode>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_keys: Option<HashMap<String, String>>,
+
     #[serde(rename = "OPENAI_API_KEY")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_api_key: Option<String>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -350,6 +354,7 @@ mod tests {
         let storage = FileAuthStorage::new(codex_home.path().to_path_buf());
         let auth_dot_json = AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some("test-key".to_string()),
             tokens: None,
             last_refresh: Some(Utc::now()),
@@ -370,6 +375,7 @@ mod tests {
         let storage = FileAuthStorage::new(codex_home.path().to_path_buf());
         let auth_dot_json = AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some("test-key".to_string()),
             tokens: None,
             last_refresh: Some(Utc::now()),
@@ -392,6 +398,7 @@ mod tests {
         let dir = tempdir()?;
         let auth_dot_json = AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some("sk-test-key".to_string()),
             tokens: None,
             last_refresh: None,
@@ -415,6 +422,7 @@ mod tests {
         );
         let auth_dot_json = AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some("sk-ephemeral".to_string()),
             tokens: None,
             last_refresh: Some(Utc::now()),
@@ -508,6 +516,7 @@ mod tests {
     fn auth_with_prefix(prefix: &str) -> AuthDotJson {
         AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some(format!("{prefix}-api-key")),
             tokens: Some(TokenData {
                 id_token: id_token_with_prefix(prefix),
@@ -529,6 +538,7 @@ mod tests {
         );
         let expected = AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some("sk-test".to_string()),
             tokens: None,
             last_refresh: None,
@@ -566,6 +576,7 @@ mod tests {
         std::fs::write(&auth_file, "stale")?;
         let auth = AuthDotJson {
             auth_mode: Some(AuthMode::Chatgpt),
+            api_keys: None,
             openai_api_key: None,
             tokens: Some(TokenData {
                 id_token: Default::default(),

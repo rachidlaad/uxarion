@@ -1529,6 +1529,8 @@ pub enum LoginAccountParams {
         #[serde(rename = "apiKey")]
         #[ts(rename = "apiKey")]
         api_key: String,
+        #[ts(optional = nullable)]
+        provider_id: Option<String>,
     },
     #[serde(rename = "chatgpt")]
     #[ts(rename = "chatgpt")]

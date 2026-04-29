@@ -11980,6 +11980,12 @@
               "apiKey": {
                 "type": "string"
               },
+              "providerId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "type": {
                 "enum": [
                   "apiKey"

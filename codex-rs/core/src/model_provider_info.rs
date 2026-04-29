@@ -5,6 +5,7 @@
 //!   2. User-defined entries inside `~/.codex/config.toml` under the `model_providers`
 //!      key. These override or extend the defaults at runtime.
 
+use crate::auth::ANTHROPIC_API_KEY_ENV_VAR;
 use crate::auth::AuthMode;
 use crate::error::EnvVarError;
 use codex_api::Provider as ApiProvider;
@@ -27,6 +28,8 @@ const MAX_STREAM_MAX_RETRIES: u64 = 100;
 const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
 const OPENAI_PROVIDER_NAME: &str = "Uxarion API";
+pub const OPENAI_PROVIDER_ID: &str = "openai";
+pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
 const PENTEST_LOCAL_PROVIDER_NAME: &str = "Pentest Local";
 const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
@@ -40,6 +43,9 @@ pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
+    /// Anthropic's Messages API exposed at `/v1/messages`.
+    #[serde(rename = "anthropic_messages")]
+    AnthropicMessages,
 }
 
 impl<'de> Deserialize<'de> for WireApi {
@@ -50,8 +56,12 @@ impl<'de> Deserialize<'de> for WireApi {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
             "responses" => Ok(Self::Responses),
+            "anthropic_messages" => Ok(Self::AnthropicMessages),
             "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["responses", "anthropic_messages"],
+            )),
         }
     }
 }
@@ -60,6 +70,10 @@ impl<'de> Deserialize<'de> for WireApi {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ModelProviderInfo {
+    /// Stable provider id assigned from the `model_providers` map key.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub provider_id: Option<String>,
     /// Friendly display name.
     pub name: String,
     /// Base URL for the provider's OpenAI-compatible API.
@@ -116,6 +130,11 @@ pub struct ModelProviderInfo {
 }
 
 impl ModelProviderInfo {
+    pub fn with_provider_id(mut self, provider_id: impl Into<String>) -> Self {
+        self.provider_id = Some(provider_id.into());
+        self
+    }
+
     fn build_header_map(&self) -> crate::error::Result<HeaderMap> {
         let capacity = self.http_headers.as_ref().map_or(0, HashMap::len)
             + self.env_http_headers.as_ref().map_or(0, HashMap::len);
@@ -219,6 +238,7 @@ impl ModelProviderInfo {
     }
     pub fn create_openai_provider() -> ModelProviderInfo {
         ModelProviderInfo {
+            provider_id: Some(OPENAI_PROVIDER_ID.to_string()),
             name: OPENAI_PROVIDER_NAME.into(),
             // Allow users to override the default OpenAI endpoint by
             // exporting `OPENAI_BASE_URL`. This is useful when pointing
@@ -234,9 +254,14 @@ impl ModelProviderInfo {
             wire_api: WireApi::Responses,
             query_params: None,
             http_headers: Some(
-                [("version".to_string(), env!("CARGO_PKG_VERSION").to_string())]
-                    .into_iter()
-                    .collect(),
+                [(
+                    "version".to_string(),
+                    crate::models_manager::client_version_to_whole_for_provider(Some(
+                        OPENAI_PROVIDER_ID,
+                    )),
+                )]
+                .into_iter()
+                .collect(),
             ),
             env_http_headers: Some(
                 [
@@ -259,7 +284,7 @@ impl ModelProviderInfo {
     }
 
     pub fn is_openai(&self) -> bool {
-        self.name == OPENAI_PROVIDER_NAME
+        self.provider_id.as_deref() == Some(OPENAI_PROVIDER_ID)
     }
 }
 
@@ -278,15 +303,18 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
     // open source ("oss") providers by default. Users are encouraged to add to
     // `model_providers` in config.toml to add their own providers.
     [
-        ("openai", P::create_openai_provider()),
+        (OPENAI_PROVIDER_ID, P::create_openai_provider()),
+        (ANTHROPIC_PROVIDER_ID, create_anthropic_provider()),
         (PENTEST_LOCAL_PROVIDER_ID, create_pentest_local_provider()),
         (
             OLLAMA_OSS_PROVIDER_ID,
-            create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
+            create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses)
+                .with_provider_id(OLLAMA_OSS_PROVIDER_ID),
         ),
         (
             LMSTUDIO_OSS_PROVIDER_ID,
-            create_oss_provider(DEFAULT_LMSTUDIO_PORT, WireApi::Responses),
+            create_oss_provider(DEFAULT_LMSTUDIO_PORT, WireApi::Responses)
+                .with_provider_id(LMSTUDIO_OSS_PROVIDER_ID),
         ),
     ]
     .into_iter()
@@ -294,8 +322,41 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
     .collect()
 }
 
+pub fn create_anthropic_provider() -> ModelProviderInfo {
+    ModelProviderInfo {
+        provider_id: Some(ANTHROPIC_PROVIDER_ID.to_string()),
+        name: "Anthropic".into(),
+        base_url: Some(
+            std::env::var("ANTHROPIC_BASE_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "https://api.anthropic.com".to_string()),
+        ),
+        env_key: Some(ANTHROPIC_API_KEY_ENV_VAR.into()),
+        env_key_instructions: Some("Set ANTHROPIC_API_KEY to your Anthropic API key.".to_string()),
+        experimental_bearer_token: None,
+        wire_api: WireApi::AnthropicMessages,
+        query_params: None,
+        http_headers: Some(
+            [
+                ("anthropic-version".to_string(), "2023-06-01".to_string()),
+                ("version".to_string(), env!("CARGO_PKG_VERSION").to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    }
+}
+
 pub fn create_pentest_local_provider() -> ModelProviderInfo {
     ModelProviderInfo {
+        provider_id: Some(PENTEST_LOCAL_PROVIDER_ID.to_string()),
         name: PENTEST_LOCAL_PROVIDER_NAME.into(),
         base_url: Some(
             std::env::var("PENTEST_LOCAL_BASE_URL")
@@ -346,6 +407,7 @@ pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> Mod
 
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
     ModelProviderInfo {
+        provider_id: None,
         name: "gpt-oss".into(),
         base_url: Some(base_url.into()),
         env_key: None,
@@ -375,6 +437,7 @@ name = "Ollama"
 base_url = "http://localhost:11434/v1"
         "#;
         let expected_provider = ModelProviderInfo {
+            provider_id: None,
             name: "Ollama".into(),
             base_url: Some("http://localhost:11434/v1".into()),
             env_key: None,
@@ -404,6 +467,7 @@ env_key = "AZURE_OPENAI_API_KEY"
 query_params = { api-version = "2025-04-01-preview" }
         "#;
         let expected_provider = ModelProviderInfo {
+            provider_id: None,
             name: "Azure".into(),
             base_url: Some("https://xxxxx.openai.azure.com/openai".into()),
             env_key: Some("AZURE_OPENAI_API_KEY".into()),
@@ -436,6 +500,7 @@ http_headers = { "X-Example-Header" = "example-value" }
 env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         "#;
         let expected_provider = ModelProviderInfo {
+            provider_id: None,
             name: "Example".into(),
             base_url: Some("https://example.com".into()),
             env_key: Some("API_KEY".into()),
@@ -481,6 +546,20 @@ wire_api = "chat"
             .expect("pentest-local provider should exist");
         assert_eq!(provider.env_key.as_deref(), Some("OPENAI_API_KEY"));
         assert_eq!(provider.wire_api, WireApi::Responses);
+        assert!(!provider.requires_openai_auth);
+        assert!(!provider.supports_websockets);
+    }
+
+    #[test]
+    fn built_in_providers_include_anthropic() {
+        let providers = built_in_model_providers();
+        let provider = providers
+            .get(ANTHROPIC_PROVIDER_ID)
+            .expect("anthropic provider should exist");
+
+        assert_eq!(provider.provider_id.as_deref(), Some(ANTHROPIC_PROVIDER_ID));
+        assert_eq!(provider.env_key.as_deref(), Some(ANTHROPIC_API_KEY_ENV_VAR));
+        assert_eq!(provider.wire_api, WireApi::AnthropicMessages);
         assert!(!provider.requires_openai_auth);
         assert!(!provider.supports_websockets);
     }

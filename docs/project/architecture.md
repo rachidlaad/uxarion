@@ -75,9 +75,17 @@ Those local artifacts are release scratch output, not the canonical runtime down
 
 Public product behavior:
 
-- default provider: API
+- default provider: OpenAI
+- optional remote provider: Claude (Anthropic) via saved API key
 - optional local providers: Ollama and LM Studio
 - security profile honors the configured provider instead of forcing the local Responses-compatible backend
+
+Auth model:
+
+- OpenAI supports either ChatGPT sign-in or a saved OpenAI API key
+- Anthropic uses a saved Anthropic API key
+- provider changes are persisted for the next session; they do not hot-swap the active session
+- the Anthropic bridge translates Uxarion function tools into Anthropic tool definitions and filters provider-incompatible OpenAI-native tools such as `web_search` and image generation
 
 Important note:
 
@@ -146,9 +154,10 @@ Channel-specific update actions:
 - bun: `bun install -g uxarion@latest`
 - source checkout: `uxarion update`
 
-Current caveat:
+Current caveats:
 
 - the update banner depends on cached release metadata and may not surface same-day releases immediately
+- Claude provider support is function-tool-first; Anthropic-native web/search/image tool parity is not yet implemented
 
 ## Config and local state
 

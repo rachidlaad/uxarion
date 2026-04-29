@@ -14,6 +14,7 @@ use crate::error::RetryLimitReachedError;
 use crate::error::UnexpectedResponseError;
 use crate::error::UsageLimitReachedError;
 use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::token_data::PlanType;
 
 pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
@@ -221,6 +222,7 @@ mod tests {
     #[test]
     fn provider_api_key_uses_saved_auth_when_env_key_missing() {
         let provider = ModelProviderInfo {
+            provider_id: None,
             name: "custom".into(),
             base_url: Some("http://127.0.0.1:8080/v1".into()),
             env_key: Some("__UXARION_TEST_MISSING_ENV_KEY__".into()),
@@ -249,6 +251,7 @@ mod tests {
     #[test]
     fn provider_api_key_returns_env_error_without_saved_auth() {
         let provider = ModelProviderInfo {
+            provider_id: None,
             name: "custom".into(),
             base_url: Some("http://127.0.0.1:8080/v1".into()),
             env_key: Some("__UXARION_TEST_MISSING_ENV_KEY__".into()),
@@ -327,10 +330,26 @@ pub(crate) fn provider_api_key_or_saved_auth(
 ) -> crate::error::Result<Option<String>> {
     match provider.api_key() {
         Ok(api_key) => Ok(api_key),
-        Err(err @ CodexErr::EnvVar(_)) => auth
-            .and_then(CodexAuth::api_key)
-            .map(|api_key| Ok(Some(api_key.to_string())))
-            .unwrap_or(Err(err)),
+        Err(err @ CodexErr::EnvVar(_)) => {
+            let saved_api_key = auth.and_then(|auth| {
+                if provider.requires_openai_auth {
+                    if auth.is_api_key_auth() {
+                        auth.saved_api_key_for_provider(OPENAI_PROVIDER_ID)
+                    } else {
+                        None
+                    }
+                } else {
+                    provider
+                        .provider_id
+                        .as_deref()
+                        .map(|provider_id| auth.saved_api_key_for_provider(provider_id))
+                        .unwrap_or_else(|| auth.saved_api_key_for_provider(OPENAI_PROVIDER_ID))
+                }
+            });
+            saved_api_key
+                .map(|api_key| Ok(Some(api_key)))
+                .unwrap_or(Err(err))
+        }
         Err(err) => Err(err),
     }
 }

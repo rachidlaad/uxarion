@@ -1160,7 +1160,7 @@ The JSON-RPC auth/account surface exposes request/response methods plus server-i
 
 Codex supports these authentication modes. The current mode is surfaced in `account/updated` (`authMode`), which also includes the current ChatGPT `planType` when available, and can be inferred from `account/read`.
 
-- **API key (`apiKey`)**: Caller supplies an OpenAI API key via `account/login/start` with `type: "apiKey"`. The API key is saved and used for API requests.
+- **API key (`apiKey`)**: Caller supplies a provider API key via `account/login/start` with `type: "apiKey"`. When omitted, `providerId` defaults to `openai`. Use `providerId: "anthropic"` to save an Anthropic API key separately from the OpenAI key.
 - **ChatGPT managed (`chatgpt`)** (recommended): Codex owns the ChatGPT OAuth flow and refresh tokens. Start via `account/login/start` with `type: "chatgpt"`; Codex persists tokens to disk and refreshes them automatically.
 
 ### API Overview
@@ -1204,7 +1204,7 @@ Field notes:
    {
      "method": "account/login/start",
      "id": 2,
-     "params": { "type": "apiKey", "apiKey": "sk-…" }
+     "params": { "type": "apiKey", "apiKey": "sk-…", "providerId": "openai" }
    }
    ```
 2. Expect:
@@ -1216,6 +1216,8 @@ Field notes:
    { "method": "account/login/completed", "params": { "loginId": null, "success": true, "error": null } }
    { "method": "account/updated", "params": { "authMode": "apikey", "planType": null } }
    ```
+
+`providerId` is optional. Supported built-in values currently include `openai` and `anthropic`.
 
 ### 3) Log in with ChatGPT (browser flow)
 

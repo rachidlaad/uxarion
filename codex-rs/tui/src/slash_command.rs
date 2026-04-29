@@ -13,6 +13,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    Login,
     #[strum(serialize = "apikey")]
     ApiKey,
     Provider,
@@ -98,7 +99,8 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE",
             SlashCommand::MemoryUpdate => "DO NOT USE",
             SlashCommand::Model => "choose what model and reasoning effort to use",
-            SlashCommand::ApiKey => "set or replace the saved API key",
+            SlashCommand::Login => "sign in with ChatGPT for OpenAI models",
+            SlashCommand::ApiKey => "save an OpenAI or Claude API key",
             SlashCommand::Provider => "choose the default provider for future sessions",
             SlashCommand::Zap => "configure the ZAP API used for web scanning",
             SlashCommand::Fast => "toggle Fast mode to enable fastest inference at 2X plan usage",
@@ -117,7 +119,7 @@ impl SlashCommand {
             SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::Mcp => "list configured MCP tools",
             SlashCommand::Apps => "manage apps",
-            SlashCommand::Logout => "log out of Uxarion",
+            SlashCommand::Logout => "sign out of ChatGPT and quit",
             SlashCommand::Rollout => "print the rollout file path",
             SlashCommand::TestApproval => "test approval request",
         }
@@ -155,6 +157,7 @@ impl SlashCommand {
             | SlashCommand::Compact
             // | SlashCommand::Undo
             | SlashCommand::Model
+            | SlashCommand::Login
             | SlashCommand::ApiKey
             | SlashCommand::Provider
             | SlashCommand::Zap
@@ -217,7 +220,6 @@ impl SlashCommand {
                 | SlashCommand::Theme
                 | SlashCommand::Mcp
                 | SlashCommand::Apps
-                | SlashCommand::Logout
                 | SlashCommand::Feedback
                 | SlashCommand::Experimental
                 | SlashCommand::ElevateSandbox

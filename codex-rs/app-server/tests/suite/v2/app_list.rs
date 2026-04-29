@@ -112,6 +112,7 @@ async fn list_apps_returns_empty_with_api_key_auth() -> Result<()> {
         codex_home.path(),
         &AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some("test-api-key".to_string()),
             tokens: None,
             last_refresh: None,

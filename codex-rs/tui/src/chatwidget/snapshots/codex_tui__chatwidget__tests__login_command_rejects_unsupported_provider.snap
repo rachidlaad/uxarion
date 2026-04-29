@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests.rs
+expression: rendered
+---
+■ ChatGPT sign-in is only available for the OpenAI provider. Use /provider openai for future sessions or /apikey anthropic to save a Claude key.

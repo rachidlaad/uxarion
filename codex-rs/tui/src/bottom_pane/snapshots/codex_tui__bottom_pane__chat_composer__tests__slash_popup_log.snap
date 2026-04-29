@@ -1,0 +1,11 @@
+---
+source: tui/src/bottom_pane/chat_composer.rs
+expression: terminal.backend()
+---
+"                                                            "
+"› /log                                                      "
+"                                                            "
+"                                                            "
+"                                                            "
+"  /login   sign in with ChatGPT for OpenAI models           "
+"  /logout  sign out of ChatGPT and quit                     "

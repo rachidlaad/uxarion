@@ -15,6 +15,7 @@ pub enum PlanType {
     Team,
     Business,
     Enterprise,
+    #[serde(alias = "education")]
     Edu,
     #[serde(other)]
     Unknown,

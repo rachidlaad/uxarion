@@ -152,7 +152,11 @@ async fn uses_cache_when_version_matches() -> Result<()> {
             let cache = ModelsCache {
                 fetched_at: Utc::now(),
                 etag: None,
-                client_version: Some(codex_core::models_manager::client_version_to_whole()),
+                client_version: Some(
+                    codex_core::models_manager::client_version_to_whole_for_provider(Some(
+                        codex_core::OPENAI_PROVIDER_ID,
+                    )),
+                ),
                 models: vec![cached_model],
             };
             let cache_path = home.join(CACHE_FILE);
@@ -243,7 +247,9 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
     let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     builder = builder
         .with_pre_build_hook(move |home| {
-            let client_version = codex_core::models_manager::client_version_to_whole();
+            let client_version = codex_core::models_manager::client_version_to_whole_for_provider(
+                Some(codex_core::OPENAI_PROVIDER_ID),
+            );
             let cache = ModelsCache {
                 fetched_at: Utc::now(),
                 etag: None,
@@ -331,8 +337,10 @@ fn test_remote_model(slug: &str, priority: i32) -> ModelInfo {
         ],
         shell_type: ConfigShellToolType::ShellCommand,
         visibility: ModelVisibility::List,
+        minimal_client_version: None,
         supported_in_api: true,
         priority,
+        available_in_plans: vec![],
         upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: None,

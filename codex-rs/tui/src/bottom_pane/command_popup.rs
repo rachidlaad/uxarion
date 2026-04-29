@@ -34,15 +34,33 @@ pub(crate) struct CommandPopup {
     state: ScrollState,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) fast_command_enabled: bool,
+    pub(crate) login_command_enabled: bool,
+    pub(crate) logout_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
     pub(crate) realtime_conversation_enabled: bool,
     pub(crate) audio_device_selection_enabled: bool,
     pub(crate) windows_degraded_sandbox_active: bool,
+}
+
+impl Default for CommandPopupFlags {
+    fn default() -> Self {
+        Self {
+            collaboration_modes_enabled: false,
+            connectors_enabled: false,
+            fast_command_enabled: false,
+            login_command_enabled: true,
+            logout_command_enabled: true,
+            personality_command_enabled: false,
+            realtime_conversation_enabled: false,
+            audio_device_selection_enabled: false,
+            windows_degraded_sandbox_active: false,
+        }
+    }
 }
 
 impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
@@ -51,6 +69,8 @@ impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
             connectors_enabled: value.connectors_enabled,
             fast_command_enabled: value.fast_command_enabled,
+            login_command_enabled: value.login_command_enabled,
+            logout_command_enabled: value.logout_command_enabled,
             personality_command_enabled: value.personality_command_enabled,
             realtime_conversation_enabled: value.realtime_conversation_enabled,
             audio_device_selection_enabled: value.audio_device_selection_enabled,
@@ -508,6 +528,8 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 fast_command_enabled: false,
+                login_command_enabled: true,
+                logout_command_enabled: true,
                 personality_command_enabled: true,
                 realtime_conversation_enabled: false,
                 audio_device_selection_enabled: false,
@@ -530,6 +552,8 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 fast_command_enabled: false,
+                login_command_enabled: true,
+                logout_command_enabled: true,
                 personality_command_enabled: true,
                 realtime_conversation_enabled: false,
                 audio_device_selection_enabled: false,
@@ -552,6 +576,8 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 fast_command_enabled: false,
+                login_command_enabled: true,
+                logout_command_enabled: true,
                 personality_command_enabled: false,
                 realtime_conversation_enabled: false,
                 audio_device_selection_enabled: false,
@@ -582,6 +608,8 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 fast_command_enabled: false,
+                login_command_enabled: true,
+                logout_command_enabled: true,
                 personality_command_enabled: true,
                 realtime_conversation_enabled: false,
                 audio_device_selection_enabled: false,
@@ -604,6 +632,8 @@ mod tests {
                 collaboration_modes_enabled: false,
                 connectors_enabled: false,
                 fast_command_enabled: false,
+                login_command_enabled: true,
+                logout_command_enabled: true,
                 personality_command_enabled: true,
                 realtime_conversation_enabled: true,
                 audio_device_selection_enabled: false,

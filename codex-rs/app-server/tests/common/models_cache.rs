@@ -26,6 +26,8 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
             ModelVisibility::Hide
         },
         supported_in_api: preset.supported_in_api,
+        minimal_client_version: preset.minimal_client_version.clone(),
+        available_in_plans: preset.available_in_plans.clone(),
         priority,
         upgrade: preset.upgrade.as_ref().map(|u| u.into()),
         base_instructions: "base instructions".to_string(),
@@ -55,11 +57,9 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
 /// The cache will be treated as fresh (within TTL) and used instead of fetching from the network.
 /// Uses bundled-catalog-derived presets, converted to ModelInfo format.
 pub fn write_models_cache(codex_home: &Path) -> std::io::Result<()> {
-    // Get a stable bundled-catalog-derived preset list and filter for picker-visible entries.
-    let presets: Vec<&ModelPreset> = all_model_presets()
-        .iter()
-        .filter(|preset| preset.show_in_picker)
-        .collect();
+    // Get a stable bundled-catalog-derived preset list, including hidden entries so model/list can
+    // exercise its includeHidden behavior.
+    let presets: Vec<&ModelPreset> = all_model_presets().iter().collect();
     // Convert presets to ModelInfo, assigning priorities (lower = earlier in list).
     // Priority is used for sorting, so the first model gets the lowest priority.
     let models: Vec<ModelInfo> = presets
@@ -84,7 +84,9 @@ pub fn write_models_cache_with_models(
     let cache_path = codex_home.join("models_cache.json");
     // DateTime<Utc> serializes to RFC3339 format by default with serde
     let fetched_at: DateTime<Utc> = Utc::now();
-    let client_version = codex_core::models_manager::client_version_to_whole();
+    let client_version = codex_core::models_manager::client_version_to_whole_for_provider(Some(
+        codex_core::OPENAI_PROVIDER_ID,
+    ));
     let cache = json!({
         "fetched_at": fetched_at,
         "etag": null,

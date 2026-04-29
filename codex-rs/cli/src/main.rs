@@ -282,9 +282,17 @@ struct LoginCommand {
 
     #[arg(
         long = "with-api-key",
-        help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | uxarion login --with-api-key`)"
+        help = "Read the API key from stdin (for example `printenv OPENAI_API_KEY | uxarion login --with-api-key --provider openai`)"
     )]
     with_api_key: bool,
+
+    #[arg(
+        long = "provider",
+        default_value = "openai",
+        value_parser = ["openai", "anthropic"],
+        help = "Provider to configure for API-key login"
+    )]
+    provider: String,
 
     #[arg(
         long = "api-key",
@@ -722,8 +730,19 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                         );
                         std::process::exit(1);
                     } else if login_cli.with_api_key {
-                        let api_key = read_api_key_from_stdin();
-                        run_login_with_api_key(login_cli.config_overrides, api_key).await;
+                        let api_key = read_api_key_from_stdin(&login_cli.provider);
+                        run_login_with_api_key(
+                            login_cli.config_overrides,
+                            login_cli.provider,
+                            api_key,
+                        )
+                        .await;
+                    } else if login_cli.provider != "openai" {
+                        eprintln!(
+                            "Browser login is only supported for the OpenAI provider. Use `uxarion login --with-api-key --provider {}` instead.",
+                            login_cli.provider
+                        );
+                        std::process::exit(1);
                     } else {
                         run_login_with_chatgpt(login_cli.config_overrides).await;
                     }

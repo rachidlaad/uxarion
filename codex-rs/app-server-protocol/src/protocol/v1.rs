@@ -210,6 +210,8 @@ pub struct RemoveConversationSubscriptionResponse {}
 #[serde(rename_all = "camelCase")]
 pub struct LoginApiKeyParams {
     pub api_key: String,
+    #[ts(optional = nullable)]
+    pub provider_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

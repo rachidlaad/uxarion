@@ -310,6 +310,16 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub fn set_login_command_enabled(&mut self, enabled: bool) {
+        self.composer.set_login_command_enabled(enabled);
+        self.request_redraw();
+    }
+
+    pub fn set_logout_command_enabled(&mut self, enabled: bool) {
+        self.composer.set_logout_command_enabled(enabled);
+        self.request_redraw();
+    }
+
     pub fn set_realtime_conversation_enabled(&mut self, enabled: bool) {
         self.composer.set_realtime_conversation_enabled(enabled);
         self.request_redraw();

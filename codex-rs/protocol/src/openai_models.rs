@@ -7,13 +7,16 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
+use serde::Serializer;
 use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
 use tracing::warn;
 use ts_rs::TS;
 
+use crate::account::PlanType;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary;
 use crate::config_types::Verbosity;
@@ -128,6 +131,12 @@ pub struct ModelPreset {
     pub upgrade: Option<ModelUpgrade>,
     /// Whether this preset should appear in the picker UI.
     pub show_in_picker: bool,
+    /// Minimum compatible client version for this preset when using ChatGPT auth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimal_client_version: Option<ClientVersion>,
+    /// ChatGPT plans allowed to use this preset.
+    #[serde(default)]
+    pub available_in_plans: Vec<PlanType>,
     /// Availability NUX shown when this preset becomes accessible to the user.
     pub availability_nux: Option<ModelAvailabilityNux>,
     /// whether this model is supported in the api
@@ -222,8 +231,56 @@ impl TruncationPolicyConfig {
 }
 
 /// Semantic version triple encoded as an array in JSON (e.g. [0, 62, 0]).
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, TS, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TS, JsonSchema)]
+#[ts(type = "[number, number, number]")]
 pub struct ClientVersion(pub i32, pub i32, pub i32);
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum ClientVersionWire {
+    String(String),
+    Tuple([i32; 3]),
+}
+
+impl ClientVersion {
+    pub fn parse(value: &str) -> Option<Self> {
+        let normalized = value
+            .trim()
+            .split_once('-')
+            .map_or(value.trim(), |(prefix, _)| prefix);
+        let mut parts = normalized.split('.');
+        let major = parts.next()?.parse().ok()?;
+        let minor = parts.next()?.parse().ok()?;
+        let patch = parts.next()?.parse().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        Some(Self(major, minor, patch))
+    }
+}
+
+impl Serialize for ClientVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        [self.0, self.1, self.2].serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ClientVersion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match ClientVersionWire::deserialize(deserializer)? {
+            ClientVersionWire::String(value) => Self::parse(&value).ok_or_else(|| {
+                serde::de::Error::custom(format!("invalid client version: {value}"))
+            }),
+            ClientVersionWire::Tuple([major, minor, patch]) => Ok(Self(major, minor, patch)),
+        }
+    }
+}
 
 const fn default_effective_context_window_percent() -> i64 {
     95
@@ -240,8 +297,12 @@ pub struct ModelInfo {
     pub supported_reasoning_levels: Vec<ReasoningEffortPreset>,
     pub shell_type: ConfigShellToolType,
     pub visibility: ModelVisibility,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimal_client_version: Option<ClientVersion>,
     pub supported_in_api: bool,
     pub priority: i32,
+    #[serde(default)]
+    pub available_in_plans: Vec<PlanType>,
     pub availability_nux: Option<ModelAvailabilityNux>,
     pub upgrade: Option<ModelInfoUpgrade>,
     pub base_instructions: String,
@@ -432,6 +493,8 @@ impl From<ModelInfo> for ModelPreset {
                 migration_markdown: Some(upgrade.migration_markdown.clone()),
             }),
             show_in_picker: info.visibility == ModelVisibility::List,
+            minimal_client_version: info.minimal_client_version,
+            available_in_plans: info.available_in_plans,
             availability_nux: info.availability_nux,
             supported_in_api: info.supported_in_api,
             input_modalities: info.input_modalities,
@@ -442,11 +505,28 @@ impl From<ModelInfo> for ModelPreset {
 impl ModelPreset {
     /// Filter models based on authentication mode.
     ///
-    /// In ChatGPT mode, all models are visible. Otherwise, only API-supported models are shown.
-    pub fn filter_by_auth(models: Vec<ModelPreset>, chatgpt_mode: bool) -> Vec<ModelPreset> {
+    /// In ChatGPT mode, models must also satisfy client-version and plan constraints. Otherwise,
+    /// only API-supported models are shown.
+    pub fn filter_by_auth(
+        models: Vec<ModelPreset>,
+        chatgpt_mode: bool,
+        client_version: ClientVersion,
+        account_plan: Option<PlanType>,
+    ) -> Vec<ModelPreset> {
         models
             .into_iter()
-            .filter(|model| chatgpt_mode || model.supported_in_api)
+            .filter(|model| {
+                if !chatgpt_mode {
+                    return model.supported_in_api;
+                }
+
+                let version_allowed = model
+                    .minimal_client_version
+                    .is_none_or(|required| client_version >= required);
+                let plan_allowed = model.available_in_plans.is_empty()
+                    || account_plan.is_some_and(|plan| model.available_in_plans.contains(&plan));
+                version_allowed && plan_allowed
+            })
             .collect()
     }
 
@@ -516,8 +596,10 @@ mod tests {
             supported_reasoning_levels: vec![],
             shell_type: ConfigShellToolType::ShellCommand,
             visibility: ModelVisibility::List,
+            minimal_client_version: None,
             supported_in_api: true,
             priority: 1,
+            available_in_plans: vec![],
             availability_nux: None,
             upgrade: None,
             base_instructions: "base".to_string(),
@@ -749,5 +831,86 @@ mod tests {
                 message: "Try Spark.".to_string(),
             })
         );
+    }
+
+    #[test]
+    fn client_version_parses_strings_and_arrays() {
+        let from_string: ClientVersion =
+            serde_json::from_str("\"0.98.0\"").expect("string version should parse");
+        let from_array: ClientVersion =
+            serde_json::from_str("[0,98,0]").expect("array version should parse");
+
+        assert_eq!(from_string, ClientVersion(0, 98, 0));
+        assert_eq!(from_array, ClientVersion(0, 98, 0));
+    }
+
+    #[test]
+    fn filter_by_auth_hides_chatgpt_models_when_plan_or_version_do_not_match() {
+        let api_model = ModelPreset {
+            id: "api".to_string(),
+            model: "api".to_string(),
+            display_name: "API".to_string(),
+            description: String::new(),
+            default_reasoning_effort: ReasoningEffort::Medium,
+            supported_reasoning_efforts: vec![],
+            supports_personality: false,
+            is_default: false,
+            upgrade: None,
+            show_in_picker: true,
+            minimal_client_version: None,
+            available_in_plans: vec![],
+            availability_nux: None,
+            supported_in_api: true,
+            input_modalities: default_input_modalities(),
+        };
+        let gated_model = ModelPreset {
+            id: "gated".to_string(),
+            model: "gated".to_string(),
+            display_name: "Gated".to_string(),
+            description: String::new(),
+            default_reasoning_effort: ReasoningEffort::Medium,
+            supported_reasoning_efforts: vec![],
+            supports_personality: false,
+            is_default: false,
+            upgrade: None,
+            show_in_picker: true,
+            minimal_client_version: Some(ClientVersion(0, 98, 0)),
+            available_in_plans: vec![PlanType::Pro],
+            availability_nux: None,
+            supported_in_api: false,
+            input_modalities: default_input_modalities(),
+        };
+
+        let api_visible = ModelPreset::filter_by_auth(
+            vec![api_model.clone(), gated_model.clone()],
+            false,
+            ClientVersion(0, 3, 0),
+            None,
+        );
+        assert_eq!(api_visible, vec![api_model.clone()]);
+
+        let chatgpt_with_old_client = ModelPreset::filter_by_auth(
+            vec![api_model.clone(), gated_model.clone()],
+            true,
+            ClientVersion(0, 97, 0),
+            Some(PlanType::Pro),
+        );
+        assert_eq!(chatgpt_with_old_client, vec![api_model.clone()]);
+
+        let chatgpt_with_wrong_plan = ModelPreset::filter_by_auth(
+            vec![api_model.clone(), gated_model.clone()],
+            true,
+            ClientVersion(0, 98, 0),
+            Some(PlanType::Plus),
+        );
+        assert_eq!(chatgpt_with_wrong_plan, vec![api_model.clone()]);
+
+        let chatgpt_allowed = ModelPreset::filter_by_auth(
+            vec![api_model.clone(), gated_model.clone()],
+            true,
+            ClientVersion(0, 98, 0),
+            Some(PlanType::Pro),
+        );
+        assert_eq!(chatgpt_allowed, vec![api_model, gated_model]);
     }
 }

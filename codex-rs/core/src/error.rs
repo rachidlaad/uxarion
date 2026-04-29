@@ -715,7 +715,7 @@ mod tests {
         };
         assert_eq!(
             err.to_string(),
-            "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later."
+            "You've hit your usage limit. Upgrade your plan or purchase more credits or try again later."
         );
     }
 
@@ -928,7 +928,7 @@ mod tests {
                 promo_message: None,
             };
             let expected = format!(
-                "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at {expected_time}."
+                "You've hit your usage limit. Purchase more credits or switch authentication methods or try again at {expected_time}."
             );
             assert_eq!(err.to_string(), expected);
         });
@@ -1082,7 +1082,7 @@ mod tests {
                 promo_message: None,
             };
             let expected = format!(
-                "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at {expected_time}."
+                "You've hit your usage limit. Upgrade your plan or purchase more credits or try again at {expected_time}."
             );
             assert_eq!(err.to_string(), expected);
         });

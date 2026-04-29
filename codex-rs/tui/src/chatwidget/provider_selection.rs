@@ -5,14 +5,16 @@ use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::render::renderable::ColumnRenderable;
+use codex_core::ANTHROPIC_PROVIDER_ID;
 use codex_core::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_core::OLLAMA_OSS_PROVIDER_ID;
+use codex_core::OPENAI_PROVIDER_ID;
 use codex_utils_oss::get_default_model_for_oss_provider;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
-const API_PROVIDER_ID: &str = "openai";
 const API_DEFAULT_MODEL: &str = "gpt-5.4";
+const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 
 impl ChatWidget {
     pub(crate) fn open_provider_popup(&mut self) {
@@ -26,7 +28,8 @@ impl ChatWidget {
 
         let current_provider_id = self.config.model_provider_id.clone();
         let items = [
-            API_PROVIDER_ID,
+            OPENAI_PROVIDER_ID,
+            ANTHROPIC_PROVIDER_ID,
             OLLAMA_OSS_PROVIDER_ID,
             LMSTUDIO_OSS_PROVIDER_ID,
         ]
@@ -57,7 +60,7 @@ impl ChatWidget {
         let mut header = ColumnRenderable::new();
         header.push(Line::from("Select Provider".bold()));
         header.push(Line::from(
-            "Choose the default backend for future sessions. Restart after changing providers."
+            "Choose the default backend for new sessions. The current session stays unchanged."
                 .dim(),
         ));
 
@@ -73,7 +76,11 @@ impl ChatWidget {
         let normalized = args.trim().to_ascii_lowercase();
         match normalized.as_str() {
             "api" | "default" | "openai" => {
-                self.queue_provider_selection(API_PROVIDER_ID);
+                self.queue_provider_selection(OPENAI_PROVIDER_ID);
+                true
+            }
+            "anthropic" | "claude" => {
+                self.queue_provider_selection(ANTHROPIC_PROVIDER_ID);
                 true
             }
             "ollama" => {
@@ -89,7 +96,10 @@ impl ChatWidget {
                 true
             }
             _ => {
-                self.add_error_message("Usage: /provider [api|ollama|lmstudio|status]".to_string());
+                self.add_error_message(
+                    "Usage: /provider [api|openai|anthropic|claude|ollama|lmstudio|status]"
+                        .to_string(),
+                );
                 false
             }
         }
@@ -109,6 +119,7 @@ fn default_model_for_provider(provider_id: &str) -> &'static str {
         OLLAMA_OSS_PROVIDER_ID | LMSTUDIO_OSS_PROVIDER_ID => {
             get_default_model_for_oss_provider(provider_id).unwrap_or(API_DEFAULT_MODEL)
         }
+        ANTHROPIC_PROVIDER_ID => ANTHROPIC_DEFAULT_MODEL,
         _ => API_DEFAULT_MODEL,
     }
 }
@@ -117,36 +128,34 @@ fn provider_label(provider_id: &str) -> &'static str {
     match provider_id {
         OLLAMA_OSS_PROVIDER_ID => "Ollama (local)",
         LMSTUDIO_OSS_PROVIDER_ID => "LM Studio (local)",
-        _ => "API (default)",
+        ANTHROPIC_PROVIDER_ID => "Claude (Anthropic)",
+        _ => "OpenAI",
     }
 }
 
 fn provider_description(provider_id: &str) -> String {
     match provider_id {
         OLLAMA_OSS_PROVIDER_ID => format!(
-            "Use a local Ollama server. Saved model defaults to {}.",
+            "Use a local Ollama server. Default model: {}.",
             default_model_for_provider(provider_id)
         ),
         LMSTUDIO_OSS_PROVIDER_ID => format!(
-            "Use a local LM Studio server. Saved model defaults to {}.",
+            "Use a local LM Studio server. Default model: {}.",
             default_model_for_provider(provider_id)
         ),
-        _ => {
-            "Use your saved API key with the built-in API provider (OpenAI by default).".to_string()
-        }
+        ANTHROPIC_PROVIDER_ID => format!(
+            "Use Claude models with a saved API key. Default model: {}.",
+            default_model_for_provider(provider_id)
+        ),
+        _ => format!(
+            "Use ChatGPT sign-in or a saved OpenAI API key. Default model: {}.",
+            default_model_for_provider(provider_id)
+        ),
     }
 }
 
 fn is_popup_current_provider(candidate_provider_id: &str, current_provider_id: &str) -> bool {
-    match candidate_provider_id {
-        OLLAMA_OSS_PROVIDER_ID | LMSTUDIO_OSS_PROVIDER_ID => {
-            candidate_provider_id == current_provider_id
-        }
-        _ => !matches!(
-            current_provider_id,
-            OLLAMA_OSS_PROVIDER_ID | LMSTUDIO_OSS_PROVIDER_ID
-        ),
-    }
+    candidate_provider_id == current_provider_id
 }
 
 fn current_provider_status_message(chat: &ChatWidget) -> String {
@@ -159,8 +168,11 @@ fn current_provider_status_message(chat: &ChatWidget) -> String {
         LMSTUDIO_OSS_PROVIDER_ID => {
             format!("Current session provider: LM Studio (local). Current model: {current_model}.")
         }
-        API_PROVIDER_ID => {
-            format!("Current session provider: API-backed. Current model: {current_model}.")
+        OPENAI_PROVIDER_ID => {
+            format!("Current session provider: OpenAI. Current model: {current_model}.")
+        }
+        ANTHROPIC_PROVIDER_ID => {
+            format!("Current session provider: Claude (Anthropic). Current model: {current_model}.")
         }
         other => format!(
             "Current session provider: API-backed ({other}). Current model: {current_model}."
@@ -169,6 +181,6 @@ fn current_provider_status_message(chat: &ChatWidget) -> String {
 }
 
 fn provider_hint() -> String {
-    "Use /provider api, /provider ollama, or /provider lmstudio to change the default for future sessions."
+    "Use /provider openai, /provider anthropic, /provider ollama, or /provider lmstudio to save the default for future sessions."
         .to_string()
 }

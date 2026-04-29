@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   publish:
@@ -48,6 +48,62 @@ jobs:
           echo "runtime_version=$runtime_version" >> "$GITHUB_OUTPUT"
           echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
           echo "runtime_asset_url=$runtime_asset_url" >> "$GITHUB_OUTPUT"
+
+      - name: Check runtime asset
+        id: asset
+        run: |
+          status=$(curl --silent --show-error --location --head --output /dev/null --write-out "%{http_code}" "${{ steps.vars.outputs.runtime_asset_url }}" || true)
+          if [ "$status" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Rust
+        if: steps.asset.outputs.exists != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Linux runtime asset
+        if: steps.asset.outputs.exists != 'true'
+        id: runtime
+        env:
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
+          CARGO_PROFILE_RELEASE_LTO: "false"
+        run: |
+          cargo build --release -p codex-cli --bin codex --manifest-path codex-rs/Cargo.toml
+
+          asset_dir="releases/${{ steps.vars.outputs.tag_name }}"
+          asset_path="${asset_dir}/uxarion-${{ steps.vars.outputs.runtime_version }}-linux-x64.tar.xz"
+          package_root="$(mktemp -d)"
+
+          mkdir -p "${asset_dir}"
+          mkdir -p "${package_root}/package/vendor/x86_64-unknown-linux-musl/codex"
+          install -m 755 codex-rs/target/release/codex "${package_root}/package/vendor/x86_64-unknown-linux-musl/codex/codex"
+          tar -C "${package_root}" -cJf "${asset_path}" package
+
+          echo "asset_path=${asset_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure GitHub release exists
+        if: steps.asset.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${{ steps.vars.outputs.tag_name }}" --repo "${EXPECTED_REPO}" >/dev/null 2>&1; then
+            gh release create "${{ steps.vars.outputs.tag_name }}" \
+              --repo "${EXPECTED_REPO}" \
+              --target "${GITHUB_SHA}" \
+              --title "${{ steps.vars.outputs.tag_name }}" \
+              --notes "Uxarion ${{ steps.vars.outputs.package_version }}"
+          fi
+
+      - name: Upload runtime asset
+        if: steps.asset.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.vars.outputs.tag_name }}" "${{ steps.runtime.outputs.asset_path }}" \
+            --repo "${EXPECTED_REPO}" \
+            --clobber
 
       - name: Ensure npm token is configured
         env:

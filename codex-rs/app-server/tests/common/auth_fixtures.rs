@@ -160,6 +160,7 @@ pub fn write_chatgpt_auth(
 
     let auth = AuthDotJson {
         auth_mode: Some(AuthMode::Chatgpt),
+        api_keys: None,
         openai_api_key: None,
         tokens: Some(tokens),
         last_refresh,

@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde::Serialize;
 #[cfg(test)]
 use serial_test::serial;
+use std::collections::HashMap;
 use std::env;
 use std::fmt::Debug;
 use std::path::Path;
@@ -26,6 +27,7 @@ use crate::auth::storage::create_auth_storage;
 use crate::config::Config;
 use crate::error::RefreshTokenFailedError;
 use crate::error::RefreshTokenFailedReason;
+use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::token_data::KnownPlan as InternalKnownPlan;
 use crate::token_data::PlanType as InternalPlanType;
 use crate::token_data::TokenData;
@@ -66,7 +68,7 @@ pub enum CodexAuth {
 
 #[derive(Debug, Clone)]
 pub struct ApiKeyAuth {
-    api_key: String,
+    provider_api_keys: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,10 +167,14 @@ impl CodexAuth {
     ) -> std::io::Result<Self> {
         let auth_mode = auth_dot_json.resolved_mode();
         if auth_mode == ApiAuthMode::ApiKey {
-            let Some(api_key) = auth_dot_json.openai_api_key.as_deref() else {
+            let provider_api_keys = auth_dot_json.api_keys_with_legacy();
+            if provider_api_keys.is_empty() {
                 return Err(std::io::Error::other("API key auth is missing a key."));
-            };
-            return Ok(CodexAuth::from_api_key_with_client(api_key, client));
+            }
+            return Ok(CodexAuth::from_provider_api_keys_with_client(
+                provider_api_keys,
+                client,
+            ));
         }
 
         let storage_mode = auth_dot_json.storage_mode(auth_credentials_store_mode);
@@ -226,9 +232,52 @@ impl CodexAuth {
 
     /// Returns `None` if `auth_mode() != AuthMode::ApiKey`.
     pub fn api_key(&self) -> Option<&str> {
+        if !self.is_api_key_auth() {
+            return None;
+        }
         match self {
-            Self::ApiKey(auth) => Some(auth.api_key.as_str()),
+            Self::ApiKey(auth) => auth
+                .provider_api_keys
+                .get(OPENAI_PROVIDER_ID)
+                .map(String::as_str),
             Self::Chatgpt(_) | Self::ChatgptAuthTokens(_) => None,
+        }
+    }
+
+    /// Returns a saved provider API key regardless of the active OpenAI auth mode.
+    pub fn saved_api_key_for_provider(&self, provider_id: &str) -> Option<String> {
+        match self {
+            Self::ApiKey(auth) => auth.provider_api_keys.get(provider_id).cloned(),
+            Self::Chatgpt(auth) => auth
+                .current_auth_json()
+                .map(|auth| auth.api_keys_with_legacy())
+                .and_then(|api_keys| api_keys.get(provider_id).cloned()),
+            Self::ChatgptAuthTokens(auth) => auth
+                .state
+                .auth_dot_json
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .map(|auth| auth.api_keys_with_legacy())
+                .and_then(|api_keys| api_keys.get(provider_id).cloned()),
+        }
+    }
+
+    pub fn saved_api_keys(&self) -> HashMap<String, String> {
+        match self {
+            Self::ApiKey(auth) => auth.provider_api_keys.clone(),
+            Self::Chatgpt(auth) => auth
+                .current_auth_json()
+                .map(|auth| auth.api_keys_with_legacy())
+                .unwrap_or_default(),
+            Self::ChatgptAuthTokens(auth) => auth
+                .state
+                .auth_dot_json
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .map(|auth| auth.api_keys_with_legacy())
+                .unwrap_or_default(),
         }
     }
 
@@ -248,7 +297,11 @@ impl CodexAuth {
     /// Returns the token string used for bearer authentication.
     pub fn get_token(&self) -> Result<String, std::io::Error> {
         match self {
-            Self::ApiKey(auth) => Ok(auth.api_key.clone()),
+            Self::ApiKey(auth) => auth
+                .provider_api_keys
+                .get(OPENAI_PROVIDER_ID)
+                .cloned()
+                .ok_or_else(|| std::io::Error::other("OpenAI API key is not available.")),
             Self::Chatgpt(_) | Self::ChatgptAuthTokens(_) => {
                 let access_token = self.get_token_data()?.access_token;
                 Ok(access_token)
@@ -321,6 +374,7 @@ impl CodexAuth {
     pub fn create_dummy_chatgpt_auth_for_testing() -> Self {
         let auth_dot_json = AuthDotJson {
             auth_mode: Some(ApiAuthMode::Chatgpt),
+            api_keys: None,
             openai_api_key: None,
             tokens: Some(TokenData {
                 id_token: Default::default(),
@@ -341,13 +395,37 @@ impl CodexAuth {
     }
 
     fn from_api_key_with_client(api_key: &str, _client: CodexHttpClient) -> Self {
-        Self::ApiKey(ApiKeyAuth {
-            api_key: api_key.to_owned(),
-        })
+        Self::from_provider_api_key_with_client(OPENAI_PROVIDER_ID, api_key, _client)
+    }
+
+    fn from_provider_api_key_with_client(
+        provider_id: &str,
+        api_key: &str,
+        _client: CodexHttpClient,
+    ) -> Self {
+        Self::from_provider_api_keys_with_client(
+            HashMap::from([(provider_id.to_string(), api_key.to_owned())]),
+            _client,
+        )
+    }
+
+    fn from_provider_api_keys_with_client(
+        provider_api_keys: HashMap<String, String>,
+        _client: CodexHttpClient,
+    ) -> Self {
+        Self::ApiKey(ApiKeyAuth { provider_api_keys })
     }
 
     pub fn from_api_key(api_key: &str) -> Self {
         Self::from_api_key_with_client(api_key, crate::default_client::create_client())
+    }
+
+    pub fn from_provider_api_key(provider_id: &str, api_key: &str) -> Self {
+        Self::from_provider_api_key_with_client(
+            provider_id,
+            api_key,
+            crate::default_client::create_client(),
+        )
     }
 }
 
@@ -371,10 +449,18 @@ impl ChatgptAuth {
 }
 
 pub const OPENAI_API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
+pub const ANTHROPIC_API_KEY_ENV_VAR: &str = "ANTHROPIC_API_KEY";
 pub const CODEX_API_KEY_ENV_VAR: &str = "CODEX_API_KEY";
 
 pub fn read_openai_api_key_from_env() -> Option<String> {
     env::var(OPENAI_API_KEY_ENV_VAR)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn read_anthropic_api_key_from_env() -> Option<String> {
+    env::var(ANTHROPIC_API_KEY_ENV_VAR)
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -403,11 +489,56 @@ pub fn login_with_api_key(
     api_key: &str,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<()> {
+    let auth_dot_json =
+        load_auth_dot_json(codex_home, auth_credentials_store_mode)?.unwrap_or(AuthDotJson {
+            auth_mode: Some(ApiAuthMode::ApiKey),
+            api_keys: None,
+            openai_api_key: None,
+            tokens: None,
+            last_refresh: None,
+        });
+    let mut api_keys = auth_dot_json.api_keys_with_legacy();
+    api_keys.insert(OPENAI_PROVIDER_ID.to_string(), api_key.to_string());
+
     let auth_dot_json = AuthDotJson {
         auth_mode: Some(ApiAuthMode::ApiKey),
-        openai_api_key: Some(api_key.to_string()),
+        api_keys: Some(api_keys),
+        openai_api_key: None,
         tokens: None,
         last_refresh: None,
+    };
+    save_auth(codex_home, &auth_dot_json, auth_credentials_store_mode)
+}
+
+/// Writes or updates managed API key auth for a specific provider.
+pub fn login_with_api_key_for_provider(
+    codex_home: &Path,
+    provider_id: &str,
+    api_key: &str,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<()> {
+    if provider_id == OPENAI_PROVIDER_ID {
+        return login_with_api_key(codex_home, api_key, auth_credentials_store_mode);
+    }
+
+    let auth_dot_json =
+        load_auth_dot_json(codex_home, auth_credentials_store_mode)?.unwrap_or(AuthDotJson {
+            auth_mode: Some(ApiAuthMode::ApiKey),
+            api_keys: None,
+            openai_api_key: None,
+            tokens: None,
+            last_refresh: None,
+        });
+    let auth_mode = auth_dot_json.resolved_mode();
+    let mut api_keys = auth_dot_json.api_keys_with_legacy();
+    api_keys.insert(provider_id.to_string(), api_key.to_string());
+
+    let auth_dot_json = AuthDotJson {
+        auth_mode: Some(auth_mode),
+        api_keys: Some(api_keys),
+        openai_api_key: None,
+        tokens: auth_dot_json.tokens,
+        last_refresh: auth_dot_json.last_refresh,
     };
     save_auth(codex_home, &auth_dot_json, auth_credentials_store_mode)
 }
@@ -768,6 +899,7 @@ impl AuthDotJson {
 
         Ok(Self {
             auth_mode: Some(ApiAuthMode::ChatgptAuthTokens),
+            api_keys: None,
             openai_api_key: None,
             tokens: Some(tokens),
             last_refresh: Some(Utc::now()),
@@ -791,10 +923,25 @@ impl AuthDotJson {
         if let Some(mode) = self.auth_mode {
             return mode;
         }
-        if self.openai_api_key.is_some() {
+        if self
+            .api_keys
+            .as_ref()
+            .is_some_and(|api_keys| !api_keys.is_empty())
+            || self.openai_api_key.is_some()
+        {
             return ApiAuthMode::ApiKey;
         }
         ApiAuthMode::Chatgpt
+    }
+
+    fn api_keys_with_legacy(&self) -> HashMap<String, String> {
+        let mut api_keys = self.api_keys.clone().unwrap_or_default();
+        if let Some(openai_api_key) = self.openai_api_key.as_ref()
+            && !api_keys.contains_key(OPENAI_PROVIDER_ID)
+        {
+            api_keys.insert(OPENAI_PROVIDER_ID.to_string(), openai_api_key.clone());
+        }
+        api_keys
     }
 
     fn storage_mode(
@@ -1099,7 +1246,9 @@ impl AuthManager {
         match (a, b) {
             (None, None) => true,
             (Some(a), Some(b)) => match (a.api_auth_mode(), b.api_auth_mode()) {
-                (ApiAuthMode::ApiKey, ApiAuthMode::ApiKey) => a.api_key() == b.api_key(),
+                (ApiAuthMode::ApiKey, ApiAuthMode::ApiKey) => {
+                    a.saved_api_keys() == b.saved_api_keys()
+                }
                 (ApiAuthMode::Chatgpt, ApiAuthMode::Chatgpt)
                 | (ApiAuthMode::ChatgptAuthTokens, ApiAuthMode::ChatgptAuthTokens) => {
                     a.get_current_auth_json() == b.get_current_auth_json()
@@ -1418,21 +1567,16 @@ mod tests {
     #[test]
     fn login_with_api_key_overwrites_existing_auth_json() {
         let dir = tempdir().unwrap();
-        let auth_path = dir.path().join("auth.json");
-        let stale_auth = json!({
-            "OPENAI_API_KEY": "sk-old",
-            "tokens": {
-                "id_token": "stale.header.payload",
-                "access_token": "stale-access",
-                "refresh_token": "stale-refresh",
-                "account_id": "stale-acc"
-            }
-        });
-        std::fs::write(
-            &auth_path,
-            serde_json::to_string_pretty(&stale_auth).unwrap(),
+        write_auth_file(
+            AuthFileParams {
+                openai_api_key: Some("sk-old".to_string()),
+                chatgpt_plan_type: None,
+                chatgpt_account_id: None,
+            },
+            dir.path(),
         )
-        .unwrap();
+        .expect("failed to write auth file");
+        let auth_path = dir.path().join("auth.json");
 
         super::login_with_api_key(dir.path(), "sk-new", AuthCredentialsStoreMode::File)
             .expect("login_with_api_key should succeed");
@@ -1441,8 +1585,53 @@ mod tests {
         let auth = storage
             .try_read_auth_json(&auth_path)
             .expect("auth.json should parse");
-        assert_eq!(auth.openai_api_key.as_deref(), Some("sk-new"));
+        assert_eq!(
+            auth.api_keys
+                .as_ref()
+                .and_then(|api_keys| api_keys.get(OPENAI_PROVIDER_ID))
+                .map(String::as_str),
+            Some("sk-new")
+        );
         assert!(auth.tokens.is_none(), "tokens should be cleared");
+    }
+
+    #[test]
+    fn login_with_non_openai_api_key_preserves_existing_auth_mode() {
+        let dir = tempdir().unwrap();
+        let auth_path = dir.path().join("auth.json");
+        write_auth_file(
+            AuthFileParams {
+                openai_api_key: None,
+                chatgpt_plan_type: None,
+                chatgpt_account_id: None,
+            },
+            dir.path(),
+        )
+        .expect("failed to write auth file");
+
+        super::login_with_api_key_for_provider(
+            dir.path(),
+            crate::model_provider_info::ANTHROPIC_PROVIDER_ID,
+            "sk-ant",
+            AuthCredentialsStoreMode::File,
+        )
+        .expect("login_with_api_key_for_provider should succeed");
+
+        let storage = FileAuthStorage::new(dir.path().to_path_buf());
+        let auth = storage
+            .try_read_auth_json(&auth_path)
+            .expect("auth.json should parse");
+        assert_eq!(auth.auth_mode, Some(ApiAuthMode::Chatgpt));
+        assert_eq!(
+            auth.api_keys
+                .as_ref()
+                .and_then(|api_keys| {
+                    api_keys.get(crate::model_provider_info::ANTHROPIC_PROVIDER_ID)
+                })
+                .map(String::as_str),
+            Some("sk-ant")
+        );
+        assert!(auth.tokens.is_some(), "tokens should be preserved");
     }
 
     #[test]
@@ -1484,6 +1673,7 @@ mod tests {
         assert_eq!(
             AuthDotJson {
                 auth_mode: None,
+                api_keys: None,
                 openai_api_key: None,
                 tokens: Some(TokenData {
                     id_token: IdTokenInfo {
@@ -1528,6 +1718,7 @@ mod tests {
         let dir = tempdir()?;
         let auth_dot_json = AuthDotJson {
             auth_mode: Some(ApiAuthMode::ApiKey),
+            api_keys: None,
             openai_api_key: Some("sk-test-key".to_string()),
             tokens: None,
             last_refresh: None,

@@ -8,15 +8,33 @@ use codex_utils_fuzzy_match::fuzzy_match;
 use crate::slash_command::SlashCommand;
 use crate::slash_command::built_in_slash_commands;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct BuiltinCommandFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) fast_command_enabled: bool,
+    pub(crate) login_command_enabled: bool,
+    pub(crate) logout_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
     pub(crate) realtime_conversation_enabled: bool,
     pub(crate) audio_device_selection_enabled: bool,
     pub(crate) allow_elevate_sandbox: bool,
+}
+
+impl Default for BuiltinCommandFlags {
+    fn default() -> Self {
+        Self {
+            collaboration_modes_enabled: false,
+            connectors_enabled: false,
+            fast_command_enabled: false,
+            login_command_enabled: true,
+            logout_command_enabled: true,
+            personality_command_enabled: false,
+            realtime_conversation_enabled: false,
+            audio_device_selection_enabled: false,
+            allow_elevate_sandbox: false,
+        }
+    }
 }
 
 /// Return the built-ins that should be visible/usable for the current input.
@@ -30,6 +48,8 @@ pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static st
         })
         .filter(|(_, cmd)| flags.connectors_enabled || *cmd != SlashCommand::Apps)
         .filter(|(_, cmd)| flags.fast_command_enabled || *cmd != SlashCommand::Fast)
+        .filter(|(_, cmd)| flags.login_command_enabled || *cmd != SlashCommand::Login)
+        .filter(|(_, cmd)| flags.logout_command_enabled || *cmd != SlashCommand::Logout)
         .filter(|(_, cmd)| flags.personality_command_enabled || *cmd != SlashCommand::Personality)
         .filter(|(_, cmd)| flags.realtime_conversation_enabled || *cmd != SlashCommand::Realtime)
         .filter(|(_, cmd)| flags.audio_device_selection_enabled || *cmd != SlashCommand::Settings)
@@ -61,6 +81,8 @@ mod tests {
             collaboration_modes_enabled: true,
             connectors_enabled: true,
             fast_command_enabled: true,
+            login_command_enabled: true,
+            logout_command_enabled: true,
             personality_command_enabled: true,
             realtime_conversation_enabled: true,
             audio_device_selection_enabled: true,
@@ -105,6 +127,20 @@ mod tests {
         let mut flags = all_enabled_flags();
         flags.fast_command_enabled = false;
         assert_eq!(find_builtin_command("fast", flags), None);
+    }
+
+    #[test]
+    fn login_command_is_hidden_when_disabled() {
+        let mut flags = all_enabled_flags();
+        flags.login_command_enabled = false;
+        assert_eq!(find_builtin_command("login", flags), None);
+    }
+
+    #[test]
+    fn logout_command_is_hidden_when_disabled() {
+        let mut flags = all_enabled_flags();
+        flags.logout_command_enabled = false;
+        assert_eq!(find_builtin_command("logout", flags), None);
     }
 
     #[test]

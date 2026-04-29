@@ -30,6 +30,7 @@ use chrono::Utc;
 use codex_app_server_protocol::AuthMode;
 use codex_core::auth::AuthCredentialsStoreMode;
 use codex_core::auth::AuthDotJson;
+use codex_core::auth::load_auth_dot_json;
 use codex_core::auth::save_auth;
 use codex_core::default_client::originator;
 use codex_core::token_data::TokenData;
@@ -767,9 +768,14 @@ pub(crate) async fn persist_tokens_async(
         {
             tokens.account_id = Some(acc.to_string());
         }
+        let existing_auth =
+            load_auth_dot_json(&codex_home, auth_credentials_store_mode).unwrap_or(None);
         let auth = AuthDotJson {
             auth_mode: Some(AuthMode::Chatgpt),
-            openai_api_key: api_key,
+            api_keys: existing_auth
+                .as_ref()
+                .and_then(|auth| auth.api_keys.clone()),
+            openai_api_key: api_key.or_else(|| existing_auth.and_then(|auth| auth.openai_api_key)),
             tokens: Some(tokens),
             last_refresh: Some(Utc::now()),
         };

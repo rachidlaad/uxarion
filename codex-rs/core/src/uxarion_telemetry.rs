@@ -447,7 +447,7 @@ endpoint = "http://127.0.0.1:9/telemetry/events"
             if install_id_path.exists() {
                 let install_id =
                     std::fs::read_to_string(&install_id_path).expect("read install id");
-                assert_eq!(Uuid::parse_str(install_id.trim()).is_ok(), true);
+                assert!(Uuid::parse_str(install_id.trim()).is_ok());
                 return;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;

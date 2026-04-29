@@ -29,6 +29,7 @@ Short-term priorities:
 - keep the `uxarion` launcher defaulting runtime sessions into the built-in `security` profile unless the user overrides it
 - add privacy-safe anonymous telemetry for growth tracking without collecting prompts, targets, or findings content
 - keep provider and ZAP setup understandable
+- keep GitHub Actions as the preferred public release path so native runtime packaging and npm publishing do not depend on a maintainer's local machine
 
 ## Where key work usually lands
 
@@ -53,7 +54,7 @@ Short-term priorities:
 Check:
 
 - version bump is consistent
-- runtime archive exists
+- runtime archive exists or the GitHub Actions release workflow is ready to build/upload it
 - npm metadata matches the runtime version
 - install/update docs still point at the right repo
 

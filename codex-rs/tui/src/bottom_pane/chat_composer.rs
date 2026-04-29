@@ -404,6 +404,8 @@ pub(crate) struct ChatComposer {
     collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     connectors_enabled: bool,
     fast_command_enabled: bool,
+    login_command_enabled: bool,
+    logout_command_enabled: bool,
     personality_command_enabled: bool,
     realtime_conversation_enabled: bool,
     audio_device_selection_enabled: bool,
@@ -442,6 +444,8 @@ impl ChatComposer {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
             connectors_enabled: self.connectors_enabled,
             fast_command_enabled: self.fast_command_enabled,
+            login_command_enabled: self.login_command_enabled,
+            logout_command_enabled: self.logout_command_enabled,
             personality_command_enabled: self.personality_command_enabled,
             realtime_conversation_enabled: self.realtime_conversation_enabled,
             audio_device_selection_enabled: self.audio_device_selection_enabled,
@@ -526,6 +530,8 @@ impl ChatComposer {
             collaboration_mode_indicator: None,
             connectors_enabled: false,
             fast_command_enabled: false,
+            login_command_enabled: true,
+            logout_command_enabled: true,
             personality_command_enabled: false,
             realtime_conversation_enabled: false,
             audio_device_selection_enabled: false,
@@ -599,6 +605,14 @@ impl ChatComposer {
 
     pub fn set_fast_command_enabled(&mut self, enabled: bool) {
         self.fast_command_enabled = enabled;
+    }
+
+    pub fn set_login_command_enabled(&mut self, enabled: bool) {
+        self.login_command_enabled = enabled;
+    }
+
+    pub fn set_logout_command_enabled(&mut self, enabled: bool) {
+        self.logout_command_enabled = enabled;
     }
 
     pub fn set_collaboration_mode_indicator(
@@ -3471,6 +3485,8 @@ impl ChatComposer {
                     let collaboration_modes_enabled = self.collaboration_modes_enabled;
                     let connectors_enabled = self.connectors_enabled;
                     let fast_command_enabled = self.fast_command_enabled;
+                    let login_command_enabled = self.login_command_enabled;
+                    let logout_command_enabled = self.logout_command_enabled;
                     let personality_command_enabled = self.personality_command_enabled;
                     let realtime_conversation_enabled = self.realtime_conversation_enabled;
                     let audio_device_selection_enabled = self.audio_device_selection_enabled;
@@ -3480,6 +3496,8 @@ impl ChatComposer {
                             collaboration_modes_enabled,
                             connectors_enabled,
                             fast_command_enabled,
+                            login_command_enabled,
+                            logout_command_enabled,
                             personality_command_enabled,
                             realtime_conversation_enabled,
                             audio_device_selection_enabled,
@@ -6495,6 +6513,61 @@ mod tests {
                 None => panic!("no selected command for '/res'"),
             },
             _ => panic!("slash popup not active after typing '/res'"),
+        }
+    }
+
+    #[test]
+    fn slash_popup_login_for_log_ui() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+
+        let mut composer = ChatComposer::new(
+            true,
+            sender,
+            false,
+            "Ask Uxarion to assess a target".to_string(),
+            false,
+        );
+
+        type_chars_humanlike(&mut composer, &['/', 'l', 'o', 'g']);
+
+        let mut terminal = Terminal::new(TestBackend::new(60, 7)).expect("terminal");
+        terminal
+            .draw(|f| composer.render(f.area(), f.buffer_mut()))
+            .expect("draw composer");
+
+        insta::assert_snapshot!("slash_popup_log", terminal.backend());
+    }
+
+    #[test]
+    fn slash_popup_login_for_log_logic() {
+        use super::super::command_popup::CommandItem;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            true,
+            sender,
+            false,
+            "Ask Uxarion to assess a target".to_string(),
+            false,
+        );
+        type_chars_humanlike(&mut composer, &['/', 'l', 'o', 'g']);
+
+        match &composer.active_popup {
+            ActivePopup::Command(popup) => match popup.selected_item() {
+                Some(CommandItem::Builtin(cmd)) => {
+                    assert_eq!(cmd.command(), "login")
+                }
+                Some(CommandItem::UserPrompt(_)) => {
+                    panic!("unexpected prompt selected for '/log'")
+                }
+                None => panic!("no selected command for '/log'"),
+            },
+            _ => panic!("slash popup not active after typing '/log'"),
         }
     }
 

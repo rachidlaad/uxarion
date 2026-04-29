@@ -1,13 +1,17 @@
 use super::cache::ModelsCacheManager;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
+use crate::api_bridge::provider_api_key_or_saved_auth;
 use crate::auth::AuthManager;
 use crate::auth::AuthMode;
 use crate::config::Config;
 use crate::default_client::build_reqwest_client;
 use crate::error::CodexErr;
 use crate::error::Result as CoreResult;
+use crate::model_provider_info::ANTHROPIC_PROVIDER_ID;
 use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::OPENAI_PROVIDER_ID;
+use crate::model_provider_info::WireApi;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets;
 use crate::models_manager::model_info;
@@ -28,8 +32,27 @@ use tracing::error;
 use tracing::info;
 
 const MODEL_CACHE_FILE: &str = "models_cache.json";
+const MODEL_CACHE_FILE_PREFIX: &str = "models_cache";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn cache_file_name(provider_id: Option<&str>) -> String {
+    let provider_id = provider_id.unwrap_or(OPENAI_PROVIDER_ID);
+    if provider_id == OPENAI_PROVIDER_ID {
+        return MODEL_CACHE_FILE.to_string();
+    }
+    let sanitized = provider_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    format!("{MODEL_CACHE_FILE_PREFIX}_{sanitized}.json")
+}
 
 /// Strategy for refreshing available models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +98,23 @@ impl ModelsManager {
         model_catalog: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
-        let cache_path = codex_home.join(MODEL_CACHE_FILE);
+        Self::new_with_provider(
+            codex_home,
+            auth_manager,
+            model_catalog,
+            collaboration_modes_config,
+            ModelProviderInfo::create_openai_provider(),
+        )
+    }
+
+    pub fn new_with_provider(
+        codex_home: PathBuf,
+        auth_manager: Arc<AuthManager>,
+        model_catalog: Option<ModelsResponse>,
+        collaboration_modes_config: CollaborationModesConfig,
+        provider: ModelProviderInfo,
+    ) -> Self {
+        let cache_path = codex_home.join(cache_file_name(provider.provider_id.as_deref()));
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
             CatalogMode::Custom
@@ -84,10 +123,7 @@ impl ModelsManager {
         };
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| {
-                Self::load_remote_models_from_file()
-                    .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"))
-            });
+            .unwrap_or_else(|| Self::default_catalog_for_provider(&provider));
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -95,7 +131,7 @@ impl ModelsManager {
             auth_manager,
             etag: RwLock::new(None),
             cache_manager,
-            provider: ModelProviderInfo::create_openai_provider(),
+            provider,
         }
     }
 
@@ -245,7 +281,18 @@ impl ModelsManager {
             return Ok(());
         }
 
-        if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
+        let auth = self.auth_manager.auth().await;
+        let remote_fetch_allowed = if self.provider.requires_openai_auth {
+            auth.is_some()
+        } else {
+            match provider_api_key_or_saved_auth(auth.as_ref(), &self.provider) {
+                Ok(_) => true,
+                Err(CodexErr::EnvVar(_)) => false,
+                Err(err) => return Err(err),
+            }
+        };
+
+        if !remote_fetch_allowed {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
@@ -283,18 +330,38 @@ impl ModelsManager {
         let auth = self.auth_manager.auth().await;
         let auth_mode = self.auth_manager.auth_mode();
         let api_provider = self.provider.to_api_provider(auth_mode)?;
-        let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
-        let transport = ReqwestTransport::new(build_reqwest_client());
-        let client = ModelsClient::new(transport, api_provider, api_auth);
-
-        let client_version = crate::models_manager::client_version_to_whole();
-        let (models, etag) = timeout(
-            MODELS_REFRESH_TIMEOUT,
-            client.list_models(&client_version, HeaderMap::new()),
-        )
-        .await
-        .map_err(|_| CodexErr::Timeout)?
-        .map_err(map_api_error)?;
+        let client_version = crate::models_manager::client_version_to_whole_for_provider(
+            self.provider.provider_id.as_deref(),
+        );
+        let (models, etag) = match self.provider.wire_api {
+            WireApi::Responses => {
+                let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
+                let transport = ReqwestTransport::new(build_reqwest_client());
+                let client = ModelsClient::new(transport, api_provider.clone(), api_auth);
+                timeout(
+                    MODELS_REFRESH_TIMEOUT,
+                    client.list_models(&client_version, HeaderMap::new()),
+                )
+                .await
+                .map_err(|_| CodexErr::Timeout)?
+                .map_err(map_api_error)?
+            }
+            WireApi::AnthropicMessages => {
+                let api_key = provider_api_key_or_saved_auth(auth.as_ref(), &self.provider)?
+                    .ok_or_else(|| {
+                        CodexErr::UnsupportedOperation(
+                            "Anthropic model discovery requires an API key.".to_string(),
+                        )
+                    })?;
+                let models = timeout(
+                    MODELS_REFRESH_TIMEOUT,
+                    crate::anthropic::list_models(&build_reqwest_client(), &api_provider, &api_key),
+                )
+                .await
+                .map_err(|_| CodexErr::Timeout)??;
+                (models, None)
+            }
+        };
 
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
@@ -310,18 +377,12 @@ impl ModelsManager {
 
     /// Replace the cached remote models and rebuild the derived presets list.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        let mut existing_models = Self::load_remote_models_from_file().unwrap_or_default();
-        for model in models {
-            if let Some(existing_index) = existing_models
-                .iter()
-                .position(|existing| existing.slug == model.slug)
-            {
-                existing_models[existing_index] = model;
-            } else {
-                existing_models.push(model);
-            }
-        }
-        *self.remote_models.write().await = existing_models;
+        let resolved_models = if models.is_empty() {
+            Self::default_catalog_for_provider(&self.provider)
+        } else {
+            models
+        };
+        *self.remote_models.write().await = resolved_models;
     }
 
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
@@ -330,11 +391,24 @@ impl ModelsManager {
         Ok(response.models)
     }
 
+    fn default_catalog_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
+        if matches!(provider.wire_api, WireApi::AnthropicMessages)
+            || provider.provider_id.as_deref() == Some(ANTHROPIC_PROVIDER_ID)
+        {
+            crate::anthropic::built_in_models()
+        } else {
+            Self::load_remote_models_from_file()
+                .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"))
+        }
+    }
+
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn try_load_cache(&self) -> bool {
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
-        let client_version = crate::models_manager::client_version_to_whole();
+        let client_version = crate::models_manager::client_version_to_whole_for_provider(
+            self.provider.provider_id.as_deref(),
+        );
         info!(client_version, "models cache: evaluating cache eligibility");
         let cache = match self.cache_manager.load_fresh(&client_version).await {
             Some(cache) => cache,
@@ -359,8 +433,20 @@ impl ModelsManager {
         remote_models.sort_by(|a, b| a.priority.cmp(&b.priority));
 
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
-        let chatgpt_mode = matches!(self.auth_manager.auth_mode(), Some(AuthMode::Chatgpt));
-        presets = ModelPreset::filter_by_auth(presets, chatgpt_mode);
+        let cached_auth = self.auth_manager.auth_cached();
+        let chatgpt_mode = matches!(
+            cached_auth
+                .as_ref()
+                .map(super::super::auth::CodexAuth::auth_mode),
+            Some(AuthMode::Chatgpt)
+        );
+        let account_plan = cached_auth
+            .as_ref()
+            .and_then(super::super::auth::CodexAuth::account_plan_type);
+        let client_version = crate::models_manager::compatibility_client_version_for_provider(
+            self.provider.provider_id.as_deref(),
+        );
+        presets = ModelPreset::filter_by_auth(presets, chatgpt_mode, client_version, account_plan);
 
         ModelPreset::mark_default_by_picker_visibility(&mut presets);
 
@@ -381,13 +467,10 @@ impl ModelsManager {
         auth_manager: Arc<AuthManager>,
         provider: ModelProviderInfo,
     ) -> Self {
-        let cache_path = codex_home.join(MODEL_CACHE_FILE);
+        let cache_path = codex_home.join(cache_file_name(provider.provider_id.as_deref()));
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         Self {
-            remote_models: RwLock::new(
-                Self::load_remote_models_from_file()
-                    .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}")),
-            ),
+            remote_models: RwLock::new(Self::default_catalog_for_provider(&provider)),
             catalog_mode: CatalogMode::Default,
             collaboration_modes_config: CollaborationModesConfig::default(),
             auth_manager,
@@ -435,6 +518,7 @@ mod tests {
     use crate::config::ConfigBuilder;
     use crate::model_provider_info::WireApi;
     use chrono::Utc;
+    use codex_protocol::openai_models::ClientVersion;
     use codex_protocol::openai_models::ModelsResponse;
     use core_test_support::responses::mount_models_once;
     use pretty_assertions::assert_eq;
@@ -490,6 +574,7 @@ mod tests {
 
     fn provider_for(base_url: String) -> ModelProviderInfo {
         ModelProviderInfo {
+            provider_id: None,
             name: "mock".into(),
             base_url: Some(base_url),
             env_key: None,
@@ -502,7 +587,7 @@ mod tests {
             request_max_retries: Some(0),
             stream_max_retries: Some(0),
             stream_idle_timeout_ms: Some(5_000),
-            requires_openai_auth: false,
+            requires_openai_auth: true,
             supports_websockets: false,
         }
     }
@@ -922,6 +1007,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn refresh_available_models_replaces_bundled_catalog_when_remote_models_arrive() {
+        let server = MockServer::start().await;
+        let remote_models = vec![remote_model("remote-only", "Remote Only", 1)];
+        let models_mock = mount_models_once(
+            &server,
+            ModelsResponse {
+                models: remote_models,
+            },
+        )
+        .await;
+
+        let codex_home = tempdir().expect("temp dir");
+        let auth_manager =
+            AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        let provider = provider_for(server.uri());
+        let manager = ModelsManager::with_provider_for_tests(
+            codex_home.path().to_path_buf(),
+            auth_manager,
+            provider,
+        );
+
+        manager
+            .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+            .await
+            .expect("refresh succeeds");
+
+        let available = manager
+            .try_list_models()
+            .expect("models should be available");
+        assert!(
+            available.iter().any(|preset| preset.model == "remote-only"),
+            "remote model should be listed"
+        );
+        assert!(
+            !available.iter().any(|preset| preset.model == "gpt-5.4"),
+            "bundled models should not be merged back in after a successful remote refresh"
+        );
+        assert_eq!(
+            models_mock.requests().len(),
+            1,
+            "remote refresh should hit /models once"
+        );
+    }
+
+    #[tokio::test]
     async fn refresh_available_models_skips_network_without_chatgpt_auth() {
         let server = MockServer::start().await;
         let dynamic_slug = "dynamic-model-only-for-test-noauth";
@@ -986,6 +1116,28 @@ mod tests {
         let available = manager.build_available_models(vec![hidden_model, visible_model]);
 
         assert_eq!(available, vec![expected_hidden, expected_visible]);
+    }
+
+    #[test]
+    fn build_available_models_uses_openai_compatibility_version_for_chatgpt_auth() {
+        let codex_home = tempdir().expect("temp dir");
+        let auth_manager =
+            AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        let manager = ModelsManager::with_provider_for_tests(
+            codex_home.path().to_path_buf(),
+            auth_manager,
+            ModelProviderInfo::create_openai_provider(),
+        );
+
+        let mut gated_model = remote_model("gated", "Gated", 0);
+        gated_model.minimal_client_version = Some(ClientVersion(0, 98, 0));
+
+        let available = manager.build_available_models(vec![gated_model]);
+
+        assert!(
+            available.iter().any(|preset| preset.model == "gated"),
+            "OpenAI provider should use the compatibility client version for ChatGPT-gated models"
+        );
     }
 
     #[test]

@@ -81,6 +81,7 @@ use codex_protocol::account::PlanType;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask;
+use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ServiceTier;
@@ -296,7 +297,10 @@ use chrono::Local;
 use codex_core::AuthManager;
 use codex_core::CodexAuth;
 use codex_core::ThreadManager;
+use codex_core::auth::AuthMode;
 use codex_file_search::FileMatch;
+use codex_login::ServerOptions;
+use codex_login::run_login_server;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -1281,6 +1285,7 @@ impl ChatWidget {
             mask.reasoning_effort = Some(event.reasoning_effort);
         }
         self.refresh_model_display();
+        self.sync_auth_command_enabled();
         self.sync_fast_command_enabled();
         self.sync_personality_command_enabled();
         self.refresh_plugin_mentions();
@@ -3333,6 +3338,7 @@ impl ChatWidget {
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget.bottom_pane.set_collaboration_modes_enabled(true);
+        widget.sync_auth_command_enabled();
         widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
         widget
@@ -3518,6 +3524,7 @@ impl ChatWidget {
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget.bottom_pane.set_collaboration_modes_enabled(true);
+        widget.sync_auth_command_enabled();
         widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
         widget
@@ -3695,6 +3702,7 @@ impl ChatWidget {
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget.bottom_pane.set_collaboration_modes_enabled(true);
+        widget.sync_auth_command_enabled();
         widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
         widget
@@ -4016,6 +4024,9 @@ impl ChatWidget {
             SlashCommand::Model => {
                 self.open_model_popup();
             }
+            SlashCommand::Login => {
+                self.handle_login_command();
+            }
             SlashCommand::ApiKey => {
                 self.show_api_key_prompt();
             }
@@ -4147,6 +4158,12 @@ impl ChatWidget {
                 self.request_quit_without_confirmation();
             }
             SlashCommand::Logout => {
+                if !self.current_provider_supports_chatgpt_login() {
+                    self.add_error_message(
+                        "ChatGPT sign-out is only available for the OpenAI provider.".to_string(),
+                    );
+                    return;
+                }
                 if let Err(e) = codex_core::auth::logout(
                     &self.config.codex_home,
                     self.config.cli_auth_credentials_store_mode,
@@ -4341,19 +4358,43 @@ impl ChatWidget {
                 }
             }
             SlashCommand::ApiKey if !trimmed.is_empty() => {
-                let Some((prepared_args, _prepared_elements)) =
-                    self.bottom_pane.prepare_inline_args_submission(false)
-                else {
+                let mut parts = trimmed.splitn(2, char::is_whitespace);
+                let first = parts.next().unwrap_or_default();
+                let explicit_provider_id = Self::api_key_provider_id_from_alias(first);
+                let provider_id = if let Some(provider_id) = explicit_provider_id {
+                    provider_id
+                } else if let Some(provider_id) = self.current_api_key_provider_id() {
+                    provider_id
+                } else {
+                    self.add_error_message("Usage: /apikey [openai|anthropic] [key]".to_string());
+                    self.bottom_pane.drain_pending_submission_state();
                     return;
                 };
-                Self::persist_api_key(
-                    self.app_event_tx.clone(),
-                    self.auth_manager.clone(),
-                    self.config.codex_home.clone(),
-                    self.config.cli_auth_credentials_store_mode,
-                    prepared_args,
-                    codex_core::auth::read_openai_api_key_from_env().is_some(),
-                );
+                let inline_api_key = explicit_provider_id
+                    .and_then(|_| parts.next())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        explicit_provider_id
+                            .is_none()
+                            .then_some(trimmed)
+                            .filter(|value| !value.is_empty())
+                    });
+
+                if let Some(api_key) = inline_api_key {
+                    let env_api_key_present = Self::provider_env_api_key_present(provider_id);
+                    Self::persist_api_key(
+                        self.app_event_tx.clone(),
+                        self.auth_manager.clone(),
+                        self.config.codex_home.clone(),
+                        self.config.cli_auth_credentials_store_mode,
+                        provider_id.to_string(),
+                        api_key.to_string(),
+                        env_api_key_present,
+                    );
+                } else {
+                    self.show_api_key_prompt_for_provider(provider_id);
+                }
                 self.bottom_pane.drain_pending_submission_state();
             }
             SlashCommand::Provider if !trimmed.is_empty() => {
@@ -4608,31 +4649,165 @@ impl ChatWidget {
         self.bottom_pane.show_view(Box::new(view));
     }
 
-    fn show_api_key_prompt(&mut self) {
-        let has_saved_api_key = matches!(
-            self.auth_manager.auth_mode(),
-            Some(codex_core::auth::AuthMode::ApiKey)
+    fn handle_login_command(&mut self) {
+        if matches!(
+            self.config.forced_login_method,
+            Some(ForcedLoginMethod::Api)
+        ) {
+            self.add_error_message(
+                "ChatGPT sign-in is disabled for this session. Use /apikey openai to save an OpenAI API key."
+                    .to_string(),
+            );
+            return;
+        }
+
+        if !self.current_provider_supports_chatgpt_login() {
+            self.add_error_message(
+                "ChatGPT sign-in is only available for the OpenAI provider. Use /provider openai for future sessions or /apikey anthropic to save a Claude key."
+                    .to_string(),
+            );
+            return;
+        }
+
+        self.start_chatgpt_login();
+    }
+
+    fn start_chatgpt_login(&mut self) {
+        if matches!(self.auth_manager.auth_mode(), Some(AuthMode::Chatgpt)) {
+            self.add_info_message("Already signed in with ChatGPT.".to_string(), None);
+            return;
+        }
+
+        let opts = ServerOptions::new(
+            self.config.codex_home.clone(),
+            codex_core::auth::CLIENT_ID.to_string(),
+            self.config.forced_chatgpt_workspace_id.clone(),
+            self.config.cli_auth_credentials_store_mode,
         );
-        let env_api_key_present = codex_core::auth::read_openai_api_key_from_env().is_some();
+
+        match run_login_server(opts) {
+            Ok(server) => {
+                let auth_url = server.auth_url.clone();
+                self.add_info_message(
+                    "Opened ChatGPT sign-in in your browser.".to_string(),
+                    Some(format!("If your browser did not open, visit {auth_url}.")),
+                );
+
+                let app_event_tx = self.app_event_tx.clone();
+                let auth_manager = self.auth_manager.clone();
+                tokio::spawn(async move {
+                    match server.block_until_done().await {
+                        Ok(()) => {
+                            auth_manager.reload();
+                            app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                                history_cell::new_info_event(
+                                    "Signed in with ChatGPT.".to_string(),
+                                    None,
+                                ),
+                            )));
+                        }
+                        Err(err) => {
+                            app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                                history_cell::new_error_event(format!(
+                                    "ChatGPT login did not complete: {err}"
+                                )),
+                            )));
+                        }
+                    }
+                });
+            }
+            Err(err) => {
+                self.add_error_message(format!("Failed to start ChatGPT login: {err}"));
+            }
+        }
+    }
+
+    fn current_provider_supports_chatgpt_login(&self) -> bool {
+        if matches!(
+            self.config.forced_login_method,
+            Some(ForcedLoginMethod::Api)
+        ) {
+            return false;
+        }
+        self.config.model_provider.requires_openai_auth
+    }
+
+    fn current_api_key_provider_id(&self) -> Option<&'static str> {
+        match self.config.model_provider_id.as_str() {
+            codex_core::OPENAI_PROVIDER_ID => Some(codex_core::OPENAI_PROVIDER_ID),
+            codex_core::ANTHROPIC_PROVIDER_ID => Some(codex_core::ANTHROPIC_PROVIDER_ID),
+            _ => None,
+        }
+    }
+
+    fn api_key_provider_id_from_alias(value: &str) -> Option<&'static str> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "api" | "default" | "openai" => Some(codex_core::OPENAI_PROVIDER_ID),
+            "anthropic" | "claude" => Some(codex_core::ANTHROPIC_PROVIDER_ID),
+            _ => None,
+        }
+    }
+
+    fn api_key_provider_name(provider_id: &str) -> &'static str {
+        match provider_id {
+            codex_core::ANTHROPIC_PROVIDER_ID => "Claude",
+            _ => "OpenAI",
+        }
+    }
+
+    fn provider_env_api_key_present(provider_id: &str) -> bool {
+        match provider_id {
+            codex_core::ANTHROPIC_PROVIDER_ID => {
+                codex_core::auth::read_anthropic_api_key_from_env().is_some()
+            }
+            _ => codex_core::auth::read_openai_api_key_from_env().is_some(),
+        }
+    }
+
+    fn show_api_key_prompt(&mut self) {
+        let Some(provider_id) = self.current_api_key_provider_id() else {
+            self.add_error_message(
+                "The current provider does not use an API key. Use /apikey openai or /apikey anthropic to save a provider key."
+                    .to_string(),
+            );
+            return;
+        };
+        self.show_api_key_prompt_for_provider(provider_id);
+    }
+
+    fn show_api_key_prompt_for_provider(&mut self, provider_id: &'static str) {
+        let provider_name = Self::api_key_provider_name(provider_id);
+        let has_saved_api_key = self
+            .auth_manager
+            .auth_cached()
+            .as_ref()
+            .and_then(|auth| auth.saved_api_key_for_provider(provider_id))
+            .is_some();
+        let env_api_key_present = Self::provider_env_api_key_present(provider_id);
         let context_label = if env_api_key_present {
-            Some("An API key environment variable is set in this session".to_string())
+            Some(format!(
+                "A {provider_name} API key environment variable is set in this session"
+            ))
         } else if has_saved_api_key {
-            Some("The current saved key will be replaced".to_string())
+            Some(format!(
+                "The current saved {provider_name} key will be replaced"
+            ))
         } else {
             None
         };
         let title = if has_saved_api_key {
-            "Replace saved API key"
+            format!("Replace saved {provider_name} API key")
         } else {
-            "Save API key"
+            format!("Save {provider_name} API key")
         };
         let tx = self.app_event_tx.clone();
         let auth_manager = self.auth_manager.clone();
         let codex_home = self.config.codex_home.clone();
         let auth_credentials_store_mode = self.config.cli_auth_credentials_store_mode;
+        let provider_id = provider_id.to_string();
         let view = CustomPromptView::new(
-            title.to_string(),
-            "Paste your API key and press Enter".to_string(),
+            title,
+            format!("Paste your {provider_name} API key and press Enter"),
             context_label,
             Box::new(move |api_key: String| {
                 Self::persist_api_key(
@@ -4640,6 +4815,7 @@ impl ChatWidget {
                     auth_manager.clone(),
                     codex_home.clone(),
                     auth_credentials_store_mode,
+                    provider_id.clone(),
                     api_key,
                     env_api_key_present,
                 );
@@ -4654,6 +4830,7 @@ impl ChatWidget {
         auth_manager: Arc<AuthManager>,
         codex_home: PathBuf,
         auth_credentials_store_mode: codex_core::auth::AuthCredentialsStoreMode,
+        provider_id: String,
         api_key: String,
         env_api_key_present: bool,
     ) {
@@ -4665,20 +4842,24 @@ impl ChatWidget {
             return;
         }
 
-        match codex_core::auth::login_with_api_key(
+        let provider_name = Self::api_key_provider_name(&provider_id);
+
+        match codex_core::auth::login_with_api_key_for_provider(
             &codex_home,
+            &provider_id,
             &api_key,
             auth_credentials_store_mode,
         ) {
             Ok(()) => {
                 auth_manager.reload();
                 let hint = env_api_key_present.then(|| {
-                    "An API key environment variable is set for this session, so that environment value will keep taking precedence until Uxarion is restarted without it."
-                        .to_string()
+                    format!(
+                        "A {provider_name} API key environment variable is set for this session, so that environment value will keep taking precedence until Uxarion is restarted without it."
+                    )
                 });
                 app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                     history_cell::new_info_event(
-                        "Saved API key to Uxarion credential storage.".to_string(),
+                        format!("Saved {provider_name} API key to Uxarion credential storage."),
                         hint,
                     ),
                 )));
@@ -6538,21 +6719,38 @@ impl ChatWidget {
             let description =
                 (!preset.description.is_empty()).then_some(preset.description.to_string());
             let is_current = preset.model.as_str() == self.current_model();
-            let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
-            let preset_for_action = preset.clone();
-            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                let preset_for_event = preset_for_action.clone();
-                tx.send(AppEvent::OpenReasoningPopup {
-                    model: preset_for_event,
-                });
-            })];
+            let direct_effort = (preset.supported_reasoning_efforts.len() <= 1).then(|| {
+                preset
+                    .supported_reasoning_efforts
+                    .first()
+                    .map(|effort| effort.effort)
+                    .unwrap_or(preset.default_reasoning_effort)
+            });
+            let actions = if let Some(effort) = direct_effort {
+                let should_prompt_plan_mode_scope = self
+                    .should_prompt_plan_mode_reasoning_scope(preset.model.as_str(), Some(effort));
+                Self::model_selection_actions(
+                    preset.model.clone(),
+                    Some(effort),
+                    should_prompt_plan_mode_scope,
+                )
+            } else {
+                let preset_for_action = preset.clone();
+                let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
+                    let preset_for_event = preset_for_action.clone();
+                    tx.send(AppEvent::OpenReasoningPopup {
+                        model: preset_for_event,
+                    });
+                })];
+                actions
+            };
             items.push(SelectionItem {
                 name: preset.model.clone(),
                 description,
                 is_current,
                 is_default: preset.is_default,
                 actions,
-                dismiss_on_select: single_supported_effort,
+                dismiss_on_select: direct_effort.is_some(),
                 ..Default::default()
             });
         }
@@ -7844,6 +8042,12 @@ impl ChatWidget {
     fn current_realtime_audio_selection_label(&self, kind: RealtimeAudioDeviceKind) -> String {
         self.current_realtime_audio_device_name(kind)
             .unwrap_or_else(|| "System default".to_string())
+    }
+
+    fn sync_auth_command_enabled(&mut self) {
+        let enabled = self.current_provider_supports_chatgpt_login();
+        self.bottom_pane.set_login_command_enabled(enabled);
+        self.bottom_pane.set_logout_command_enabled(enabled);
     }
 
     fn sync_fast_command_enabled(&mut self) {

@@ -1501,6 +1501,7 @@ fn prompt_with_input_and_instructions(input: Vec<ResponseItem>, instructions: &s
 
 fn websocket_provider(server: &WebSocketTestServer) -> ModelProviderInfo {
     ModelProviderInfo {
+        provider_id: None,
         name: "mock-ws".into(),
         base_url: Some(format!("{}/v1", server.uri())),
         env_key: None,

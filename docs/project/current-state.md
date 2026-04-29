@@ -31,7 +31,7 @@ The legacy `codex-hacker` fork is no longer the source of truth.
 
 ## Current shipped version
 
-- Latest shipped version at the time of this document: `0.2.0`
+- Latest shipped version at the time of this document: `0.3.0`
 
 ## Effective platform support
 
@@ -43,14 +43,18 @@ Other platforms may exist in source or packaging scaffolding, but the reliable p
 
 ## Important current behaviors
 
-- API provider is the default provider.
+- OpenAI is the default provider.
 - The `uxarion` launcher forces its own runtime home to `UXARION_HOME` or `~/.uxarion` instead of inheriting the desktop app's `CODEX_HOME`.
 - The `uxarion` launcher defaults runtime sessions to the `security` profile unless `--profile` overrides it.
 - Security mode binds exact scoped URLs to the provided host, port, and path instead of inferring alternate routes.
 - During assessment and reporting, findings, evidence, and reports must be written through the built-in security tools instead of ad hoc shell file creation.
 - When exact security artifact paths are already available, assessment and reporting flows should not search `/root`, `$HOME`, workspaces, or historical sessions to rediscover them.
 - Optional Uxarion telemetry can emit anonymous `app_opened`, `session_started`, and `report_generated` events when `[uxarion_telemetry]` is configured.
-- `/provider` supports API, Ollama, and LM Studio.
+- `/provider` supports OpenAI, Claude (Anthropic), Ollama, and LM Studio.
+- `/login` is reserved for ChatGPT sign-in on the OpenAI provider.
+- `/apikey` saves provider API keys and can target OpenAI or Anthropic explicitly.
+- Claude sessions use the Anthropic Messages API bridge and currently expose function-style tools only; OpenAI-native tools such as `web_search` and image generation are filtered out for Claude turns.
+- Changing providers only affects future sessions; the running session keeps its original provider until restart.
 - ZAP is configurable through `/zap`.
 - npm installs download the native runtime from `uxarion` GitHub Release assets.
 - Update checks read from the `uxarion` GitHub releases feed.

@@ -20,3 +20,8 @@
 
 - Summary: public branding is Uxarion, but many internal crates and folders still use `codex-*`
 - Impact: large internal renames are risky and should only be done as dedicated refactors
+
+## Claude provider does not yet support provider-native web or image tools
+
+- Summary: Claude support currently uses function-style tool definitions through the Anthropic Messages API bridge.
+- Impact: OpenAI-native tools such as `web_search` and image generation are filtered out during Claude turns until provider-native parity is implemented.

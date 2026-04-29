@@ -629,8 +629,10 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
         }],
         shell_type: ConfigShellToolType::UnifiedExec,
         visibility: ModelVisibility::List,
+        minimal_client_version: None,
         supported_in_api: true,
         priority: 1,
+        available_in_plans: Vec::new(),
         upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: Some(ModelMessages {
@@ -744,8 +746,10 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         }],
         shell_type: ConfigShellToolType::UnifiedExec,
         visibility: ModelVisibility::List,
+        minimal_client_version: None,
         supported_in_api: true,
         priority: 1,
+        available_in_plans: Vec::new(),
         upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: Some(ModelMessages {

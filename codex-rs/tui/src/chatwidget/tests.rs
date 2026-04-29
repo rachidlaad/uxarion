@@ -2016,13 +2016,6 @@ fn lines_to_single_string(lines: &[ratatui::text::Line<'static>]) -> String {
     s
 }
 
-fn user_input_text(input: UserInput) -> String {
-    match input {
-        UserInput::Text { text, .. } => text,
-        _ => panic!("expected text input"),
-    }
-}
-
 #[tokio::test]
 async fn collab_spawn_end_shows_requested_model_and_effort() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
@@ -6557,6 +6550,49 @@ async fn api_key_prompt_popup_snapshot() {
 }
 
 #[tokio::test]
+async fn login_command_reports_existing_chatgpt_session() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = codex_core::OPENAI_PROVIDER_ID.to_string();
+    chat.config.model_provider.requires_openai_auth = true;
+    set_chatgpt_auth(&mut chat);
+
+    chat.dispatch_command(SlashCommand::Login);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_snapshot!("login_command_reports_existing_chatgpt_session", rendered);
+}
+
+#[tokio::test]
+async fn login_command_rejects_anthropic_provider() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = codex_core::ANTHROPIC_PROVIDER_ID.to_string();
+    chat.config.model_provider.requires_openai_auth = false;
+
+    chat.dispatch_command(SlashCommand::Login);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one error message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_snapshot!("login_command_rejects_anthropic_provider", rendered);
+}
+
+#[tokio::test]
+async fn login_command_rejects_unsupported_provider() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = OLLAMA_OSS_PROVIDER_ID.to_string();
+    chat.config.model_provider.requires_openai_auth = false;
+
+    chat.dispatch_command(SlashCommand::Login);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one error message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_snapshot!("login_command_rejects_unsupported_provider", rendered);
+}
+
+#[tokio::test]
 async fn provider_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
@@ -6612,8 +6648,20 @@ async fn provider_command_inline_arg_dispatches_api_selection() {
             label,
         }) if provider_id == "openai"
             && model == "gpt-5.4"
-            && label == "API (default)"
+            && label == "OpenAI"
     );
+}
+
+#[tokio::test]
+async fn apikey_command_inline_provider_opens_target_prompt() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = OLLAMA_OSS_PROVIDER_ID.to_string();
+    chat.config.model_provider.requires_openai_auth = false;
+
+    chat.dispatch_command_with_args(SlashCommand::ApiKey, "anthropic".to_string(), Vec::new());
+
+    let popup = render_bottom_popup(&chat, 84);
+    assert_snapshot!("apikey_command_inline_provider_opens_target_prompt", popup);
 }
 
 #[tokio::test]
@@ -6687,7 +6735,7 @@ async fn api_key_prompt_persists_key_and_updates_auth_manager() {
         AppEvent::InsertHistoryCell(cell) => {
             let rendered = lines_to_single_string(&cell.display_lines(80));
             assert!(
-                rendered.contains("Saved API key to Uxarion credential storage."),
+                rendered.contains("Saved OpenAI API key to Uxarion credential storage."),
                 "expected API-key success message, got {rendered:?}"
             );
         }
@@ -6703,7 +6751,11 @@ async fn api_key_prompt_persists_key_and_updates_auth_manager() {
         saved_auth,
         Some(codex_core::auth::AuthDotJson {
             auth_mode: Some(codex_app_server_protocol::AuthMode::ApiKey),
-            openai_api_key: Some("sk-new".to_string()),
+            api_keys: Some(std::collections::HashMap::from([(
+                "openai".to_string(),
+                "sk-new".to_string(),
+            )])),
+            openai_api_key: None,
             tokens: None,
             last_refresh: None,
         })
@@ -7934,6 +7986,8 @@ async fn model_picker_hides_show_in_picker_false_models_from_cache() {
         is_default: false,
         upgrade: None,
         show_in_picker,
+        minimal_client_version: None,
+        available_in_plans: vec![],
         availability_nux: None,
         supported_in_api: true,
         input_modalities: default_input_modalities(),
@@ -7952,6 +8006,112 @@ async fn model_picker_hides_show_in_picker_false_models_from_cache() {
     assert!(
         !popup.contains("test-hidden-model"),
         "expected hidden model to be excluded from picker:\n{popup}"
+    );
+}
+
+#[tokio::test]
+async fn model_picker_selects_model_without_reasoning_popup_when_no_efforts_are_available() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let preset = ModelPreset {
+        id: "claude-sonnet-4-20250514".to_string(),
+        model: "claude-sonnet-4-20250514".to_string(),
+        display_name: "Claude Sonnet 4".to_string(),
+        description: "Claude model without reasoning options".to_string(),
+        default_reasoning_effort: ReasoningEffortConfig::None,
+        supported_reasoning_efforts: vec![],
+        supports_personality: false,
+        is_default: false,
+        upgrade: None,
+        show_in_picker: true,
+        minimal_client_version: None,
+        available_in_plans: vec![],
+        availability_nux: None,
+        supported_in_api: true,
+        input_modalities: default_input_modalities(),
+    };
+
+    chat.open_all_models_popup(vec![preset]);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    let popup = render_bottom_popup(&chat, 80);
+    assert!(
+        !popup.contains("Select Model and Effort"),
+        "expected model picker to close after selection:\n{popup}"
+    );
+
+    let mut events = Vec::new();
+    while let Ok(ev) = rx.try_recv() {
+        events.push(ev);
+    }
+
+    assert!(
+        events.iter().any(
+            |ev| matches!(ev, AppEvent::UpdateModel(model) if model == "claude-sonnet-4-20250514")
+        ),
+        "expected model update event; events: {events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|ev| matches!(ev, AppEvent::PersistModelSelection { model, effort: Some(ReasoningEffortConfig::None) } if model == "claude-sonnet-4-20250514")),
+        "expected persisted model selection; events: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn model_picker_selects_model_without_second_popup_when_only_one_effort_is_available() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let preset = ModelPreset {
+        id: "single-effort-model".to_string(),
+        model: "single-effort-model".to_string(),
+        display_name: "single-effort-model".to_string(),
+        description: "Model with one reasoning effort".to_string(),
+        default_reasoning_effort: ReasoningEffortConfig::High,
+        supported_reasoning_efforts: vec![ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::High,
+            description: "Greater reasoning depth for complex problems".to_string(),
+        }],
+        supports_personality: false,
+        is_default: false,
+        upgrade: None,
+        show_in_picker: true,
+        minimal_client_version: None,
+        available_in_plans: vec![],
+        availability_nux: None,
+        supported_in_api: true,
+        input_modalities: default_input_modalities(),
+    };
+
+    chat.open_all_models_popup(vec![preset]);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    let popup = render_bottom_popup(&chat, 80);
+    assert!(
+        !popup.contains("Select Reasoning Level"),
+        "expected reasoning popup to be skipped:\n{popup}"
+    );
+    assert!(
+        !popup.contains("Select Model and Effort"),
+        "expected model picker to close after selection:\n{popup}"
+    );
+
+    let mut events = Vec::new();
+    while let Ok(ev) = rx.try_recv() {
+        events.push(ev);
+    }
+
+    assert!(
+        events.iter().any(|ev| matches!(
+            ev,
+            AppEvent::UpdateReasoningEffort(Some(ReasoningEffortConfig::High))
+        )),
+        "expected reasoning update event; events: {events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|ev| matches!(ev, AppEvent::PersistModelSelection { model, effort: Some(ReasoningEffortConfig::High) } if model == "single-effort-model")),
+        "expected persisted model selection; events: {events:?}"
     );
 }
 
@@ -8203,6 +8363,8 @@ async fn single_reasoning_option_skips_selection() {
         is_default: false,
         upgrade: None,
         show_in_picker: true,
+        minimal_client_version: None,
+        available_in_plans: vec![],
         availability_nux: None,
         supported_in_api: true,
         input_modalities: default_input_modalities(),

@@ -7,11 +7,13 @@
 //! into a one-shot CLI command while still producing a durable `codex-login.log` artifact that
 //! support can request from users.
 
+use codex_core::ANTHROPIC_PROVIDER_ID;
 use codex_core::CodexAuth;
+use codex_core::auth::ANTHROPIC_API_KEY_ENV_VAR;
 use codex_core::auth::AuthCredentialsStoreMode;
 use codex_core::auth::AuthMode;
 use codex_core::auth::CLIENT_ID;
-use codex_core::auth::login_with_api_key;
+use codex_core::auth::login_with_api_key_for_provider;
 use codex_core::auth::logout;
 use codex_core::config::Config;
 use codex_login::ServerOptions;
@@ -35,6 +37,22 @@ const CHATGPT_LOGIN_DISABLED_MESSAGE: &str =
 const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
     "API key login is disabled. Use ChatGPT login instead.";
 const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
+
+fn api_key_env_var_for_provider(provider_id: &str) -> &'static str {
+    if provider_id == ANTHROPIC_PROVIDER_ID {
+        ANTHROPIC_API_KEY_ENV_VAR
+    } else {
+        codex_core::auth::OPENAI_API_KEY_ENV_VAR
+    }
+}
+
+fn provider_display_name(provider_id: &str) -> &'static str {
+    if provider_id == ANTHROPIC_PROVIDER_ID {
+        "Anthropic"
+    } else {
+        "OpenAI"
+    }
+}
 
 /// Installs a small file-backed tracing layer for direct `codex login` flows.
 ///
@@ -160,19 +178,21 @@ pub async fn run_login_with_chatgpt(cli_config_overrides: CliConfigOverrides) ->
 
 pub async fn run_login_with_api_key(
     cli_config_overrides: CliConfigOverrides,
+    provider_id: String,
     api_key: String,
 ) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
     let _login_log_guard = init_login_file_logging(&config);
-    tracing::info!("starting api key login flow");
+    tracing::info!(provider_id, "starting api key login flow");
 
     if matches!(config.forced_login_method, Some(ForcedLoginMethod::Chatgpt)) {
         eprintln!("{API_KEY_LOGIN_DISABLED_MESSAGE}");
         std::process::exit(1);
     }
 
-    match login_with_api_key(
+    match login_with_api_key_for_provider(
         &config.codex_home,
+        &provider_id,
         &api_key,
         config.cli_auth_credentials_store_mode,
     ) {
@@ -187,17 +207,19 @@ pub async fn run_login_with_api_key(
     }
 }
 
-pub fn read_api_key_from_stdin() -> String {
+pub fn read_api_key_from_stdin(provider_id: &str) -> String {
     let mut stdin = std::io::stdin();
+    let env_var = api_key_env_var_for_provider(provider_id);
+    let provider_name = provider_display_name(provider_id);
 
     if stdin.is_terminal() {
         eprintln!(
-            "--with-api-key expects the API key on stdin. Try piping it, e.g. `printenv OPENAI_API_KEY | uxarion login --with-api-key`."
+            "--with-api-key expects the API key on stdin. Try piping it, e.g. `printenv {env_var} | uxarion login --with-api-key --provider {provider_id}`."
         );
         std::process::exit(1);
     }
 
-    eprintln!("Reading API key from stdin...");
+    eprintln!("Reading {provider_name} API key from stdin...");
 
     let mut buffer = String::new();
     if let Err(err) = stdin.read_to_string(&mut buffer) {
@@ -318,16 +340,32 @@ pub async fn run_login_status(cli_config_overrides: CliConfigOverrides) -> ! {
 
     match CodexAuth::from_auth_storage(&config.codex_home, config.cli_auth_credentials_store_mode) {
         Ok(Some(auth)) => match auth.auth_mode() {
-            AuthMode::ApiKey => match auth.get_token() {
-                Ok(api_key) => {
-                    eprintln!("Logged in using an API key - {}", safe_format_key(&api_key));
-                    std::process::exit(0);
-                }
-                Err(e) => {
-                    eprintln!("Unexpected error retrieving API key: {e}");
+            AuthMode::ApiKey => {
+                let mut saved_keys = auth.saved_api_keys().into_iter().collect::<Vec<_>>();
+                saved_keys.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+                if saved_keys.is_empty() {
+                    eprintln!(
+                        "Logged in using API key auth, but no saved provider keys were found."
+                    );
                     std::process::exit(1);
                 }
-            },
+
+                let formatted = saved_keys
+                    .into_iter()
+                    .map(|(provider_id, api_key)| {
+                        format!(
+                            "{} - {}",
+                            provider_display_name(&provider_id),
+                            safe_format_key(&api_key)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                eprintln!("Logged in using saved API key auth - {formatted}");
+                std::process::exit(0);
+            }
             AuthMode::Chatgpt => {
                 eprintln!("Logged in using ChatGPT");
                 std::process::exit(0);

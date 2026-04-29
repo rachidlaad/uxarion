@@ -40,10 +40,12 @@ use crate::update_action::UpdateAction;
 use crate::version::CODEX_CLI_VERSION;
 use codex_ansi_escape::ansi_escape_line;
 use codex_app_server_protocol::ConfigLayerSource;
+use codex_core::ANTHROPIC_PROVIDER_ID;
 use codex_core::AuthManager;
 use codex_core::CodexAuth;
 use codex_core::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_core::OLLAMA_OSS_PROVIDER_ID;
+use codex_core::OPENAI_PROVIDER_ID;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
@@ -304,6 +306,24 @@ fn provider_selection_edits(
     }
 
     edits
+}
+
+fn provider_label(provider_id: &str) -> &'static str {
+    match provider_id {
+        OLLAMA_OSS_PROVIDER_ID => "Ollama (local)",
+        LMSTUDIO_OSS_PROVIDER_ID => "LM Studio (local)",
+        ANTHROPIC_PROVIDER_ID => "Claude (Anthropic)",
+        OPENAI_PROVIDER_ID => "OpenAI",
+        _ => "custom provider",
+    }
+}
+
+fn provider_follow_up_hint(provider_id: &str) -> Option<&'static str> {
+    match provider_id {
+        OPENAI_PROVIDER_ID => Some("You can save an OpenAI key now with /apikey openai."),
+        ANTHROPIC_PROVIDER_ID => Some("You can save a Claude key now with /apikey anthropic."),
+        _ => None,
+    }
 }
 
 fn zap_selection_edits(config: &SecurityZapConfig) -> Vec<ConfigEdit> {
@@ -2951,19 +2971,22 @@ impl App {
                     .await
                 {
                     Ok(()) => {
-                        let mut message = format!("Provider changed to {label}");
+                        let mut message = format!("Saved default provider as {label}");
                         if let Some(profile) = profile {
                             message.push_str(" for ");
                             message.push_str(profile);
                             message.push_str(" profile");
                         }
-                        self.chat_widget.add_info_message(
-                            message,
-                            Some(
-                                "Restart Uxarion to use the saved provider in a new session."
-                                    .to_string(),
-                            ),
+                        let current_provider =
+                            provider_label(&self.chat_widget.config_ref().model_provider_id);
+                        let mut hint = format!(
+                            "Restart Uxarion to start a new {label} session. Current session still uses {current_provider}."
                         );
+                        if let Some(follow_up) = provider_follow_up_hint(&provider_id) {
+                            hint.push(' ');
+                            hint.push_str(follow_up);
+                        }
+                        self.chat_widget.add_info_message(message, Some(hint));
                     }
                     Err(err) => {
                         tracing::error!(
@@ -4045,7 +4068,7 @@ mod tests {
     use crate::history_cell::UserHistoryCell;
     use crate::history_cell::new_session_info;
     use crate::multi_agents::AgentPickerThreadEntry;
-    use crate::test_backend::VT100Backend;
+
     use assert_matches::assert_matches;
     use codex_core::CodexAuth;
     use codex_core::config::ConfigBuilder;

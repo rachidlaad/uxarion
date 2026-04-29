@@ -1232,6 +1232,7 @@ mod tests {
             request_id: RequestId::Integer(2),
             params: v2::LoginAccountParams::ApiKey {
                 api_key: "secret".to_string(),
+                provider_id: None,
             },
         };
         assert_eq!(
@@ -1240,7 +1241,8 @@ mod tests {
                 "id": 2,
                 "params": {
                     "type": "apiKey",
-                    "apiKey": "secret"
+                    "apiKey": "secret",
+                    "providerId": null
                 }
             }),
             serde_json::to_value(&request)?,

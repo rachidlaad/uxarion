@@ -182,6 +182,7 @@ use codex_core::CodexAuth;
 use codex_core::CodexThread;
 use codex_core::Cursor as RolloutCursor;
 use codex_core::NewThread;
+use codex_core::OPENAI_PROVIDER_ID;
 use codex_core::RolloutRecorder;
 use codex_core::SessionMeta;
 use codex_core::SteerInputError;
@@ -190,7 +191,7 @@ use codex_core::ThreadManager;
 use codex_core::ThreadSortKey as CoreThreadSortKey;
 use codex_core::auth::AuthMode as CoreAuthMode;
 use codex_core::auth::CLIENT_ID;
-use codex_core::auth::login_with_api_key;
+use codex_core::auth::login_with_api_key_for_provider;
 use codex_core::auth::login_with_chatgpt_auth_tokens;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -899,9 +900,18 @@ impl CodexMessageProcessor {
 
     async fn login_v2(&mut self, request_id: ConnectionRequestId, params: LoginAccountParams) {
         match params {
-            LoginAccountParams::ApiKey { api_key } => {
-                self.login_api_key_v2(request_id, LoginApiKeyParams { api_key })
-                    .await;
+            LoginAccountParams::ApiKey {
+                api_key,
+                provider_id,
+            } => {
+                self.login_api_key_v2(
+                    request_id,
+                    LoginApiKeyParams {
+                        api_key,
+                        provider_id,
+                    },
+                )
+                .await;
             }
             LoginAccountParams::Chatgpt => {
                 self.login_chatgpt_v2(request_id).await;
@@ -958,8 +968,11 @@ impl CodexMessageProcessor {
             }
         }
 
-        match login_with_api_key(
+        let provider_id = params.provider_id.as_deref().unwrap_or(OPENAI_PROVIDER_ID);
+
+        match login_with_api_key_for_provider(
             &self.config.codex_home,
+            provider_id,
             &params.api_key,
             self.config.cli_auth_credentials_store_mode,
         ) {

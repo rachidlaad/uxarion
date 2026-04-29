@@ -986,7 +986,7 @@ fn ensure_finding_ids(findings: &mut [FindingRecord]) {
 fn finding_report_path(root_dir: &Path, finding_id: &str) -> PathBuf {
     root_dir.join(format!(
         "report-finding-{}.md",
-        sanitize_identifier(finding_id)
+        sanitize_report_identifier(finding_id)
     ))
 }
 
@@ -1462,6 +1462,26 @@ fn sanitize_identifier(input: &str) -> String {
     )
 }
 
+fn sanitize_report_identifier(input: &str) -> String {
+    let compact = input
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_ascii_lowercase();
+    if compact.is_empty() {
+        "finding".to_string()
+    } else {
+        compact
+    }
+}
+
 fn extract_html_title(body: &str) -> Option<String> {
     let title_regex = Regex::new(r"(?is)<title[^>]*>(.*?)</title>").ok()?;
     title_regex
@@ -1708,7 +1728,10 @@ mod tests {
             .await;
 
         let snapshot = service.snapshot().await;
-        assert_eq!(snapshot.scope.allowed_hosts, vec!["127.0.0.1".to_string()]);
+        assert_eq!(
+            snapshot.scope.allowed_hosts,
+            vec!["127.0.0.1:8000".to_string()]
+        );
         assert_eq!(
             snapshot.scope.derived_from.as_deref(),
             Some("current_user_input")
@@ -2016,11 +2039,10 @@ mod tests {
 
         let err = command_is_allowed(
             &[vec![
-                "python3".to_string(),
-                "/tmp/write-report.py".to_string(),
+                "tee".to_string(),
                 "/tmp/ux-report-clean-home/security/019d67cb/report.md".to_string(),
             ]],
-            &[],
+            &["http://127.0.0.1".to_string()],
             &["/tmp/ux-report-clean-home/security/019d67cb/report.md".to_string()],
             &[],
             &scope,

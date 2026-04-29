@@ -493,7 +493,7 @@ fn rewrite_claude_terms(content: &str) -> String {
         "claudecode",
         "claude",
     ] {
-        rewritten = replace_case_insensitive_with_boundaries(&rewritten, from, "Codex");
+        rewritten = replace_case_insensitive_with_boundaries(&rewritten, from, "Uxarion");
     }
     rewritten
 }
@@ -966,7 +966,7 @@ mod tests {
 
         assert_eq!(
             fs::read_to_string(repo_root.join("AGENTS.md")).expect("read target"),
-            "Codex\nCodex\nCodex\nSee AGENTS.md\n"
+            "Uxarion\nUxarion\nUxarion\nSee AGENTS.md\n"
         );
         assert_eq!(
             fs::read_to_string(repo_with_existing_target.join("AGENTS.md"))

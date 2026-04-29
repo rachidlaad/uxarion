@@ -18,9 +18,24 @@ Update both:
 
 The npm package version and the runtime version should normally match.
 
+Important:
+
+- the user-facing Uxarion release version may diverge from the OpenAI compatibility version sent to ChatGPT/Codex backend endpoints
+- do not overwrite backend compatibility headers with the public release version unless the backend model catalog has been verified against that client version
+
 ## Build the runtime
 
-Current practical build command:
+For public releases, prefer GitHub Actions instead of building locally.
+
+The `npm-publish` workflow now handles the Linux runtime asset for a release:
+
+- resolves `codex-cli/package.json`
+- builds `codex-cli` on GitHub when the expected runtime asset is missing
+- packages `package/vendor/x86_64-unknown-linux-musl/codex/codex`
+- uploads `uxarion-X.Y.Z-linux-x64.tar.xz` to the matching GitHub release
+- publishes the npm wrapper after the runtime URL is reachable
+
+Local fallback build command:
 
 ```bash
 cd /mnt/c/codex-hacker/codex-rs
@@ -70,8 +85,9 @@ npm view uxarion version
 ## Push and publish
 
 1. push source commits to `uxarion/main`
-2. create the GitHub release and attach the runtime archive
-3. let the GitHub Actions npm publish workflow publish the wrapper package from the tagged source
+2. create and publish the GitHub release tag, for example `vX.Y.Z`
+3. let the GitHub Actions npm publish workflow build/upload the Linux runtime asset if it is missing
+4. let the same workflow publish the wrapper package from the tagged source
 
 Required repo secret:
 
@@ -81,10 +97,10 @@ Typical commands:
 
 ```bash
 git push uxarion HEAD:main
-gh release create vX.Y.Z releases/vX.Y.Z/uxarion-X.Y.Z-linux-x64.tar.xz --repo rachidlaad/uxarion --target main
+gh release create vX.Y.Z --repo rachidlaad/uxarion --target main --title vX.Y.Z --notes "Uxarion X.Y.Z"
 ```
 
-The npm publish workflow should be triggered by the published GitHub release. If needed, rerun it manually with `workflow_dispatch` from the GitHub Actions UI after confirming the release asset exists.
+The npm publish workflow should be triggered by the published GitHub release. If needed, rerun it manually with `workflow_dispatch` from the GitHub Actions UI.
 
 ## Public verification
 

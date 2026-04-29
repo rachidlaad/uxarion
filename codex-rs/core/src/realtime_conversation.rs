@@ -724,6 +724,7 @@ mod tests {
     #[test]
     fn realtime_api_key_uses_saved_auth_when_env_key_missing() {
         let provider = ModelProviderInfo {
+            provider_id: None,
             name: "custom".into(),
             base_url: Some("http://127.0.0.1:8080/v1".into()),
             env_key: Some("__UXARION_TEST_MISSING_ENV_KEY__".into()),

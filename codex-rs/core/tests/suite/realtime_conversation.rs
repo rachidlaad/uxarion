@@ -35,7 +35,7 @@ use std::fs;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
-const STARTUP_CONTEXT_HEADER: &str = "Startup context from Codex.";
+const STARTUP_CONTEXT_HEADER: &str = "Startup context from Uxarion.";
 const MEMORY_PROMPT_PHRASE: &str =
     "You have access to a memory folder with guidance from prior runs.";
 fn websocket_request_text(
