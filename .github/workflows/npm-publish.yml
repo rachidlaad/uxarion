@@ -63,6 +63,12 @@ jobs:
         if: steps.asset.outputs.exists != 'true'
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux runtime build dependencies
+        if: steps.asset.outputs.exists != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcap-dev
+
       - name: Build Linux runtime asset
         if: steps.asset.outputs.exists != 'true'
         id: runtime
