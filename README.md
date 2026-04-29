@@ -3,6 +3,17 @@
 <p align="center"><strong>Uxarion</strong> is an open-source terminal security assessment agent for local, operator-driven testing.</p>
 <p align="center"><code>npm install -g uxarion</code><br />or <code>curl -fsSL https://raw.githubusercontent.com/rachidlaad/uxarion/main/install.sh | sh</code></p>
 
+<p align="center">
+  <video src="./.github/uxarion-demo-mazyan-mediti.mp4" controls width="960"></video>
+</p>
+<p align="center"><a href="./.github/uxarion-demo-mazyan-mediti.mp4">Watch the demo video</a></p>
+
+I ran UXARION against OWASP crAPI locally at `http://127.0.0.1:8888`, with MailHog at `http://127.0.0.1:8025`.
+
+In the demo, UXARION explores the app like a terminal-based security agent: it follows user flows, inspects API behavior, compares accounts, sends requests, and confirms findings.
+
+It found 4 real bugs in the vulnerable app, including BOLA/IDOR-style authorization issues where one user could access or act on another user's data.
+
 ## What Uxarion is
 
 Uxarion keeps an interactive terminal agent loop, but focuses it on web and application security work:
