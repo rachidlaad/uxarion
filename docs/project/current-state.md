@@ -31,7 +31,7 @@ The legacy `codex-hacker` fork is no longer the source of truth.
 
 ## Current shipped version
 
-- Latest shipped version at the time of this document: `0.3.0`
+- Latest shipped version at the time of this document: `0.3.1`
 
 ## Effective platform support
 
@@ -44,6 +44,8 @@ Other platforms may exist in source or packaging scaffolding, but the reliable p
 ## Important current behaviors
 
 - OpenAI is the default provider.
+- OpenAI model discovery uses a pinned backend compatibility client version so ChatGPT-gated model catalogs can advance independently from the public Uxarion package version.
+- The bundled OpenAI catalog includes `gpt-5.5` as the top picker-visible model for eligible OpenAI accounts and API-key users.
 - The `uxarion` launcher forces its own runtime home to `UXARION_HOME` or `~/.uxarion` instead of inheriting the desktop app's `CODEX_HOME`.
 - The `uxarion` launcher defaults runtime sessions to the `security` profile unless `--profile` overrides it.
 - Security mode binds exact scoped URLs to the provided host, port, and path instead of inferring alternate routes.
