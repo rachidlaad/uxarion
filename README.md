@@ -4,7 +4,9 @@
 <p align="center"><code>npm install -g uxarion</code><br />or <code>curl -fsSL https://raw.githubusercontent.com/rachidlaad/uxarion/main/install.sh | sh</code></p>
 
 <p align="center">
-  <video src="./.github/uxarion-demo-mazyan-mediti.mp4" controls width="960"></video>
+  <a href="./.github/uxarion-demo-mazyan-mediti.mp4">
+    <img src="./.github/uxarion-splash.png" alt="Uxarion demo screenshot" width="960" />
+  </a>
 </p>
 <p align="center"><a href="./.github/uxarion-demo-mazyan-mediti.mp4">Watch the demo video</a></p>
 
