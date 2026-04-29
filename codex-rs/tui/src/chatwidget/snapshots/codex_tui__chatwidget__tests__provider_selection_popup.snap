@@ -6,7 +6,7 @@ expression: popup
   Choose the default backend for new sessions. The current session stays unchanged
 
 › 1. OpenAI (current)    Use ChatGPT sign-in or a saved OpenAI API key. Default
-                         model: gpt-5.4.
+                         model: gpt-5.5.
   2. Claude (Anthropic)  Use Claude models with a saved API key. Default model:
                          claude-sonnet-4-20250514.
   3. Ollama (local)      Use a local Ollama server. Default model: gpt-oss:20b.
