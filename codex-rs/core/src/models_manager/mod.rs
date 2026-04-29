@@ -8,7 +8,7 @@ use codex_protocol::openai_models::ClientVersion;
 
 use crate::model_provider_info::OPENAI_PROVIDER_ID;
 
-pub const OPENAI_COMPATIBILITY_CLIENT_VERSION: ClientVersion = ClientVersion(0, 98, 0);
+pub const OPENAI_COMPATIBILITY_CLIENT_VERSION: ClientVersion = ClientVersion(0, 124, 0);
 
 /// Convert the client version string to a whole version string (e.g. "1.2.3-alpha.4" -> "1.2.3").
 pub fn client_version_to_whole() -> String {

@@ -1130,7 +1130,7 @@ mod tests {
         );
 
         let mut gated_model = remote_model("gated", "Gated", 0);
-        gated_model.minimal_client_version = Some(ClientVersion(0, 98, 0));
+        gated_model.minimal_client_version = Some(ClientVersion(0, 124, 0));
 
         let available = manager.build_available_models(vec![gated_model]);
 
