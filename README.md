@@ -4,9 +4,8 @@
 <p align="center"><code>npm install -g uxarion</code><br />or <code>curl -fsSL https://raw.githubusercontent.com/rachidlaad/uxarion/main/install.sh | sh</code></p>
 
 <p align="center">
-  <video src="./.github/uxarion-demo-mazyan-mediti.mp4" controls width="960"></video>
+  <video src="https://raw.githubusercontent.com/rachidlaad/uxarion/main/.github/demo.mp4" controls preload="metadata" width="960"></video>
 </p>
-<p align="center"><a href="./.github/uxarion-demo-mazyan-mediti.mp4">Watch the demo video</a></p>
 
 I ran UXARION against OWASP crAPI locally at `http://127.0.0.1:8888`, with MailHog at `http://127.0.0.1:8025`.
 
