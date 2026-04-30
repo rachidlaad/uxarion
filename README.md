@@ -28,6 +28,44 @@ Uxarion keeps an interactive terminal agent loop, but focuses it on web and appl
 
 Uxarion is local-first. You bring the target scope, tooling, and API key; Uxarion helps you drive the workflow from one terminal UI.
 
+## Quickstart
+
+### Install
+
+```bash
+npm install -g uxarion
+```
+
+or
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rachidlaad/uxarion/main/install.sh | sh
+```
+
+### Launch
+
+```bash
+uxarion
+```
+
+### Add your API key
+
+Run `uxarion`, then use `/apikey` inside the terminal UI to save a key for future runs. You can also export `OPENAI_API_KEY` if you prefer environment-based setup.
+
+### Optional: switch to a local model
+
+Uxarion keeps the API-backed provider as the default. To use a local provider instead:
+
+1. Start your local model server.
+   - Ollama should expose an OpenAI-compatible endpoint on `http://localhost:11434/v1`
+   - LM Studio should expose an OpenAI-compatible endpoint on `http://localhost:1234/v1`
+2. Launch `uxarion`
+3. Run `/provider ollama` or `/provider lmstudio`
+4. Restart Uxarion
+5. Run `/provider status` in the new session to confirm the active backend
+
+Provider changes are saved for future sessions. Uxarion does not start Ollama or LM Studio for you, and local providers do not use your `OPENAI_API_KEY`.
+
 ## ZAP setup
 
 Uxarion talks to ZAP through the API, not by scripting the desktop UI.
@@ -71,44 +109,6 @@ Environment overrides:
 - Source, releases, issues, and discussions: [github.com/rachidlaad/uxarion](https://github.com/rachidlaad/uxarion)
 - Canonical install command: `npm install -g uxarion`
 - Direct GitHub install: `curl -fsSL https://raw.githubusercontent.com/rachidlaad/uxarion/main/install.sh | sh`
-
-## Quickstart
-
-### Install
-
-```bash
-npm install -g uxarion
-```
-
-or
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/rachidlaad/uxarion/main/install.sh | sh
-```
-
-### Launch
-
-```bash
-uxarion
-```
-
-### Add your API key
-
-Run `uxarion`, then use `/apikey` inside the terminal UI to save a key for future runs. You can also export `OPENAI_API_KEY` if you prefer environment-based setup.
-
-### Optional: switch to a local model
-
-Uxarion keeps the API-backed provider as the default. To use a local provider instead:
-
-1. Start your local model server.
-   - Ollama should expose an OpenAI-compatible endpoint on `http://localhost:11434/v1`
-   - LM Studio should expose an OpenAI-compatible endpoint on `http://localhost:1234/v1`
-2. Launch `uxarion`
-3. Run `/provider ollama` or `/provider lmstudio`
-4. Restart Uxarion
-5. Run `/provider status` in the new session to confirm the active backend
-
-Provider changes are saved for future sessions. Uxarion does not start Ollama or LM Studio for you, and local providers do not use your `OPENAI_API_KEY`.
 
 ## Updates
 
